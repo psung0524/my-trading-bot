@@ -14,14 +14,14 @@ from main import SamsungSecuritiesParser, TradeFIFOEngine, TradingMetricsAnalyze
 from screener import NaverStockScreener
 from notifier import TelegramNotifier
 
-CONFIG_FILE = Path(__file__).parent / "config.json"
+CONFIG_DIR = Path(__file__).parent / "user_data"
+CONFIG_DIR.mkdir(exist_ok=True)
 ENV_FILE = Path(__file__).parent / ".env"
-WATCHLIST_FILE = "watchlist.json"
 
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. 토스증권 스타일 프리미엄 라이트 테마 & 모바일 최적화 CSS
+# 1. 다중 사용자 식별 및 토스증권 스타일 UI CSS
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
@@ -32,6 +32,13 @@ st.set_page_config(
 
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
+
+# 사용자 ID 감지 (URL 파라미터 ?user=xxx 또는 기본 default)
+url_user = query_params.get("user", "").strip()
+if "current_user" not in st.session_state:
+    st.session_state["current_user"] = url_user if url_user else "default"
+
+current_user = st.session_state["current_user"]
 
 st.markdown("""
 <style>
@@ -150,27 +157,27 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 2. 상단 고정 네비게이션 바
+# 2. 상단 고정 네비게이션 바 (사용자 ID 파라미터 보존)
 # -------------------------------------------------------------
 st.markdown(f"""
 <div class="mobile-app-top-bar">
-    <a href="?tab=screener" target="_self" class="mobile-app-tab-item {'active' if active_tab=='screener' else ''}">
+    <a href="?user={current_user}&tab=screener" target="_self" class="mobile-app-tab-item {'active' if active_tab=='screener' else ''}">
         <div class="mobile-app-tab-icon">🎯</div>
         <div>스크리너</div>
     </a>
-    <a href="?tab=monitor" target="_self" class="mobile-app-tab-item {'active' if active_tab=='monitor' else ''}">
+    <a href="?user={current_user}&tab=monitor" target="_self" class="mobile-app-tab-item {'active' if active_tab=='monitor' else ''}">
         <div class="mobile-app-tab-icon">📡</div>
         <div>포트폴리오</div>
     </a>
-    <a href="?tab=backtest" target="_self" class="mobile-app-tab-item {'active' if active_tab=='backtest' else ''}">
+    <a href="?user={current_user}&tab=backtest" target="_self" class="mobile-app-tab-item {'active' if active_tab=='backtest' else ''}">
         <div class="mobile-app-tab-icon">🔬</div>
         <div>백테스트</div>
     </a>
-    <a href="?tab=briefing" target="_self" class="mobile-app-tab-item {'active' if active_tab=='briefing' else ''}">
+    <a href="?user={current_user}&tab=briefing" target="_self" class="mobile-app-tab-item {'active' if active_tab=='briefing' else ''}">
         <div class="mobile-app-tab-icon">📢</div>
         <div>브리핑</div>
     </a>
-    <a href="?tab=report" target="_self" class="mobile-app-tab-item {'active' if active_tab=='report' else ''}">
+    <a href="?user={current_user}&tab=report" target="_self" class="mobile-app-tab-item {'active' if active_tab=='report' else ''}">
         <div class="mobile-app-tab-icon">🧠</div>
         <div>복기코칭</div>
     </a>
@@ -178,52 +185,58 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 헬퍼 함수 & 네이버 테마/시세 수집 엔진
+# 3. 사용자별 독립 설정 및 파일 입출력 함수
 # -------------------------------------------------------------
-def load_saved_credentials():
+def get_user_config_file(user_id: str) -> Path:
+    safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "default"
+    return CONFIG_DIR / f"config_{safe_name}.json"
+
+def get_user_watchlist_file(user_id: str) -> Path:
+    safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "default"
+    return CONFIG_DIR / f"watchlist_{safe_name}.json"
+
+def load_user_credentials(user_id: str):
     creds = {
         "gemini_api_key": os.getenv("GEMINI_API_KEY", ""),
         "tg_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
         "tg_chat_id": os.getenv("TELEGRAM_CHAT_ID", "")
     }
-    try:
-        creds["gemini_api_key"] = st.secrets.get("GEMINI_API_KEY", creds["gemini_api_key"])
-        creds["tg_token"] = st.secrets.get("TELEGRAM_BOT_TOKEN", creds["tg_token"])
-        creds["tg_chat_id"] = st.secrets.get("TELEGRAM_CHAT_ID", creds["tg_chat_id"])
-    except Exception:
-        pass
-
-    if CONFIG_FILE.exists():
+    cfg_file = get_user_config_file(user_id)
+    if cfg_file.exists():
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                creds["gemini_api_key"] = data.get("gemini_api_key") or creds["gemini_api_key"]
-                creds["tg_token"] = data.get("tg_token") or creds["tg_token"]
-                creds["tg_chat_id"] = data.get("tg_chat_id") or creds["tg_chat_id"]
+                creds["gemini_api_key"] = data.get("gemini_api_key", "")
+                creds["tg_token"] = data.get("tg_token", "")
+                creds["tg_chat_id"] = data.get("tg_chat_id", "")
         except Exception:
             pass
     return creds
 
-def get_saved_watchlist():
-    if not os.path.exists(WATCHLIST_FILE):
-        with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
+def get_saved_watchlist(user_id: str):
+    w_file = get_user_watchlist_file(user_id)
+    if not w_file.exists():
+        with open(w_file, "w", encoding="utf-8") as f:
             json.dump([], f)
         return []
     try:
-        with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
+        with open(w_file, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return []
 
-def save_watchlist(watchlist):
-    with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
+def save_watchlist(user_id: str, watchlist):
+    w_file = get_user_watchlist_file(user_id)
+    with open(w_file, "w", encoding="utf-8") as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
+# -------------------------------------------------------------
+# 4. 시세 및 검색 엔진
+# -------------------------------------------------------------
 @st.cache_data(ttl=86400)
 def load_all_krx_stocks():
     stocks = []
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    
     for sosok in [0, 1]:
         for page in range(1, 15):
             try:
@@ -257,17 +270,14 @@ def load_all_krx_stocks():
         if s['code'] not in seen:
             seen.add(s['code'])
             final_list.append(s)
-            
     return final_list
 
 def search_stock_by_name(keyword: str):
     if not keyword or len(keyword.strip()) == 0:
         return []
-    
     kw = keyword.strip().lower()
     if kw.isdigit() and len(kw) == 6:
         return [{"name": f"종목코드({kw})", "code": kw}]
-        
     master = load_all_krx_stocks()
     matched = [s for s in master if kw in s['name'].lower() or kw in s['code']]
     matched.sort(key=lambda x: (not x['name'].lower().startswith(kw), len(x['name'])))
@@ -275,14 +285,12 @@ def search_stock_by_name(keyword: str):
 
 @st.cache_data(ttl=60)
 def fetch_theme_stocks(theme_no: str, theme_name: str):
-    """네이버 테마 상세 페이지의 전체 관련 종목 크롤링"""
     stocks = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
         res = requests.get(url, headers=headers, timeout=4)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        
         rows = soup.select("table.type_5 tr")
         for row in rows:
             name_tag = row.select_one("td.name a")
@@ -290,26 +298,19 @@ def fetch_theme_stocks(theme_no: str, theme_name: str):
                 continue
             name = name_tag.text.strip()
             code = name_tag['href'].split('code=')[-1].strip()
-            
             tds = row.select("td")
             if len(tds) < 8:
                 continue
-                
             curr_str = tds[1].text.strip().replace(",", "")
             curr_p = int(curr_str) if curr_str.isdigit() else 0
-            
             chg_str = tds[3].text.strip().replace("%", "").replace("+", "").strip()
             try:
                 chg_rate = float(chg_str)
             except Exception:
                 chg_rate = 0.0
-                
             vol_str = tds[6].text.strip().replace(",", "")
             vol = int(vol_str) if vol_str.isdigit() else 0
-            
-            # 거래대금 추정 (현재가 * 거래량 / 1억)
             amount_eok = round((curr_p * vol) / 100000000, 1)
-            
             stocks.append({
                 "종목명": name,
                 "종목코드": code,
@@ -329,7 +330,6 @@ def fetch_theme_stocks(theme_no: str, theme_name: str):
             })
     except Exception:
         pass
-        
     return stocks
 
 def fetch_realtime_price(code: str):
@@ -414,7 +414,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
     with c_act:
         unique_btn_key = f"btn_{tab_prefix}_{row['종목코드']}_{row.name if hasattr(row, 'name') else row['종목코드']}"
         if st.button("➕ 감시 등록", key=unique_btn_key, use_container_width=True, type="primary"):
-            current_list = get_saved_watchlist()
+            current_list = get_saved_watchlist(current_user)
             current_list = [s for s in current_list if s["code"] != row["종목코드"]]
             current_list.append({
                 "name": row['종목명'],
@@ -431,19 +431,30 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
                 "strategy": ",".join(row.get('매칭전략', ['THEME'])),
                 "added_at": datetime.now().strftime("%Y-%m-%d %H:%M")
             })
-            save_watchlist(current_list)
-            st.toast(f"✅ [{row['종목명']}] 감시 등록 완료! (5% 변동 시 텔레그램 자동 발송)")
+            save_watchlist(current_user, current_list)
+            st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 4. 사이드바 (시스템 설정)
+# 5. 사이드바 (사용자 전환 및 개별 설정)
 # -------------------------------------------------------------
-saved_creds = load_saved_credentials()
+saved_creds = load_user_credentials(current_user)
 
 with st.sidebar:
-    st.header("⚙️ 시스템 설정")
+    st.header("👤 사용자 계정 관리")
+    user_input = st.text_input("접속 계정 ID (영문/숫자/한글)", value=current_user)
+    if st.button("🔄 계정 전환", use_container_width=True):
+        if user_input.strip():
+            st.session_state["current_user"] = user_input.strip()
+            st.query_params["user"] = user_input.strip()
+            st.toast(f"✅ '{user_input.strip()}' 계정으로 전환되었습니다.")
+            st.rerun()
+            
+    st.info(f"현재 접속 계정: **`{current_user}`**\n\n내 전용 링크:\n`?user={current_user}`")
+
+    st.divider()
+    st.header(f"⚙️ [{current_user}] 전용 설정")
     api_key = st.text_input("Gemini API Key", type="password", value=saved_creds["gemini_api_key"])
     
-    st.divider()
     st.header("📲 텔레그램 알림 설정")
     tg_token = st.text_input("Bot Token", type="password", value=saved_creds["tg_token"])
     tg_chat_id = st.text_input("My Chat ID", value=saved_creds["tg_chat_id"])
@@ -451,20 +462,21 @@ with st.sidebar:
     col_save, col_test = st.columns([1, 1])
     with col_save:
         if st.button("💾 영구 저장", use_container_width=True, type="primary"):
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            cfg_file = get_user_config_file(current_user)
+            with open(cfg_file, "w", encoding="utf-8") as f:
                 json.dump({
                     "gemini_api_key": api_key.strip(),
                     "tg_token": tg_token.strip(),
                     "tg_chat_id": tg_chat_id.strip()
                 }, f, ensure_ascii=False, indent=2)
-            st.toast("✅ 설정값이 영구 저장되었습니다!")
+            st.toast(f"✅ [{current_user}] 설정값이 저장되었습니다!")
             st.rerun()
 
     with col_test:
         if st.button("🔔 연결 테스트", use_container_width=True):
             if tg_token and tg_chat_id:
                 notifier = TelegramNotifier(tg_token, tg_chat_id)
-                if notifier.send_message("✅ *AI 트레이딩 가디언과 텔레그램이 완벽히 연동되었습니다.*"):
+                if notifier.send_message(f"✅ *[{current_user}] 계정과 텔레그램이 완벽히 연동되었습니다.*"):
                     st.success("발송 성공!")
                 else:
                     st.error("토큰/ID를 확인하세요.")
@@ -472,7 +484,7 @@ with st.sidebar:
                 st.warning("토큰과 ID를 입력하세요.")
 
 # -------------------------------------------------------------
-# 5. 시장 지수 대시보드 (토스 증권 스타일 카드)
+# 6. 시장 지수 대시보드
 # -------------------------------------------------------------
 market_regime = NaverStockScreener.get_market_regime()
 safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
@@ -487,8 +499,9 @@ kosdaq_color = "#dc2626" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.
 
 st.markdown(f"""
 <div class='toss-card'>
-    <div style='font-size:1.0rem; font-weight:800; color:#0f172a; margin-bottom:6px;'>
-        {market_regime['badge']}
+    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;'>
+        <div style='font-size:1.0rem; font-weight:800; color:#0f172a;'>{market_regime['badge']}</div>
+        <div style='font-size:0.75rem; background:#f1f5f9; padding:2px 6px; border-radius:4px; font-weight:bold; color:#475569;'>👤 {current_user}</div>
     </div>
     <div style='display:flex; gap:6px; margin-bottom:6px;'>
         <div style='flex:1; background:#f8fafc; border:1px solid #f1f5f9; border-radius:8px; padding:6px; text-align:center;'>
@@ -533,7 +546,6 @@ if active_tab == "screener":
     if top_themes:
         st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#334155; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP (클릭 시 전 종목 보기)</div>", unsafe_allow_html=True)
         
-        # 2x2 컴팩트 그리드
         t_row1_c1, t_row1_c2 = st.columns(2)
         t_row2_c1, t_row2_c2 = st.columns(2)
         grid_cols = [t_row1_c1, t_row1_c2, t_row2_c1, t_row2_c2]
@@ -558,7 +570,6 @@ if active_tab == "screener":
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
     active_theme = st.session_state.get("selected_theme_filter")
     
-    # 🚀 테마 선택 시: 해당 테마의 모든 관련 종목을 실시간 수집 및 등락률/거래대금 순 정렬
     if active_theme:
         target_theme_data = next((t for t in top_themes if t["theme_name"] == active_theme), None)
         theme_no = target_theme_data.get('theme_no', '') if target_theme_data else ''
@@ -573,7 +584,6 @@ if active_tab == "screener":
             st.rerun()
 
         if theme_stocks:
-            # 정렬 옵션 (상승률순 vs 거래대금순)
             sort_opt = st.radio(
                 "정렬 기준",
                 ["📈 상승률 높은순", "💰 거래대금 많은순"],
@@ -615,10 +625,10 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오
+# TAB 2: 감시 포트폴리오 (개별 사용자 전용)
 # -------------------------------------------------------------
 elif active_tab == "monitor":
-    st.markdown("#### 📡 실시간 감시 포트폴리오 & 5% 변동 알림")
+    st.markdown(f"#### 📡 [{current_user}] 감시 포트폴리오 & 5% 변동 알림")
     
     tg_t = saved_creds["tg_token"]
     tg_c = saved_creds["tg_chat_id"]
@@ -643,8 +653,8 @@ elif active_tab == "monitor":
             with c_in2:
                 stop_pct_in = st.number_input("손절선 (%)", value=6.0, step=0.5)
 
-            if st.button(f"➕ [{sel_stock['name']}] 포트폴리오에 등록", use_container_width=True, type="primary"):
-                curr_list = get_saved_watchlist()
+            if st.button(f"➕ [{sel_stock['name']}] 등록", use_container_width=True, type="primary"):
+                curr_list = get_saved_watchlist(current_user)
                 curr_list = [s for s in curr_list if s["code"] != sel_stock["code"]]
                 calc_stop = int(buy_price_in * (1 - (stop_pct_in / 100)))
                 calc_tp = int(buy_price_in * (1 + ((stop_pct_in * 3) / 100)))
@@ -664,7 +674,7 @@ elif active_tab == "monitor":
                     "strategy": "CUSTOM",
                     "added_at": datetime.now().strftime("%Y-%m-%d %H:%M")
                 })
-                save_watchlist(curr_list)
+                save_watchlist(current_user, curr_list)
                 st.toast(f"✅ [{sel_stock['name']}] 등록 완료!")
                 st.rerun()
         else:
@@ -674,9 +684,9 @@ elif active_tab == "monitor":
     if st.button("🔄 실시간 시세 조회 & 5% 변동 감시", use_container_width=True, type="primary"):
         st.rerun()
 
-    current_list = get_saved_watchlist()
+    current_list = get_saved_watchlist(current_user)
     if not current_list:
-        st.info("현재 감시 중인 종목이 없습니다. 위에서 종목을 검색하거나 1번 탭에서 등록하세요.")
+        st.info(f"[{current_user}] 계정에 감시 중인 종목이 없습니다. 위에서 종목을 검색해 등록하세요.")
     else:
         updated = False
         for item in current_list:
@@ -699,7 +709,7 @@ elif active_tab == "monitor":
             if current_tier != 0 and current_tier != last_tier and notifier:
                 direction = "🚀 급등" if pnl_pct > 0 else "🔻 급락/손절주의"
                 alert_msg = (
-                    f"{'🟢' if pnl_pct>0 else '🔴'} [포트폴리오 {direction} 5% 변동 알림]\n\n"
+                    f"{'🟢' if pnl_pct>0 else '🔴'} [{current_user} 포트폴리오 {direction} 5% 변동 알림]\n\n"
                     f"• 종목: {item['name']} ({code})\n"
                     f"• 매수가: {buy_p:,}원 ➡️ 현재가: {curr_p:,}원\n"
                     f"• 수익률: {pnl_pct:+0.2f}%\n"
@@ -740,14 +750,14 @@ elif active_tab == "monitor":
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button(f"🗑️ [{item['name']}] 감시 삭제", key=f"del_{code}", use_container_width=True):
+            if st.button(f"🗑️ [{item['name']}] 삭제", key=f"del_{code}", use_container_width=True):
                 current_list = [s for s in current_list if s["code"] != code]
-                save_watchlist(current_list)
+                save_watchlist(current_user, current_list)
                 st.toast(f"{item['name']} 삭제 완료")
                 st.rerun()
 
         if updated:
-            save_watchlist(current_list)
+            save_watchlist(current_user, current_list)
 
 # -------------------------------------------------------------
 # TAB 3: 20년 팩트 백테스팅
@@ -828,8 +838,8 @@ elif active_tab == "backtest":
 # TAB 4: 4대 타임라인 텔레그램 브리핑
 # -------------------------------------------------------------
 elif active_tab == "briefing":
-    st.markdown("#### 📢 시간대별 4대 텔레그램 브리핑 센터")
-    st.caption("버튼을 누르면 정밀 수급 분석 브리핑이 스마트폰 텔레그램으로 즉시 발송됩니다.")
+    st.markdown(f"#### 📢 [{current_user}] 시간대별 4대 텔레그램 브리핑 센터")
+    st.caption(f"발송 버튼을 누르면 [{current_user}] 계정에 설정된 텔레그램 봇으로 즉시 전송됩니다.")
 
     tg_t = saved_creds["tg_token"]
     tg_c = saved_creds["tg_chat_id"]
@@ -909,7 +919,7 @@ elif active_tab == "briefing":
 # TAB 5: 매매복기 & AI 심층진단
 # -------------------------------------------------------------
 elif active_tab == "report":
-    st.markdown("#### 📊 삼성증권 매매복기 & AI 진단")
+    st.markdown(f"#### 📊 [{current_user}] 삼성증권 매매복기 & AI 진단")
     uploaded_file = st.file_uploader("📂 삼성증권 엑셀(.xlsx) 업로드", type=["xlsx", "xls"])
     if uploaded_file is not None:
         try:
