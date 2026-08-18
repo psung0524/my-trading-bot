@@ -27,9 +27,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# 쿼리 파라미터를 통한 실시간 탭 상태 감지
+query_params = st.query_params
+active_tab = query_params.get("tab", "screener")
+
 st.markdown("""
 <style>
-    /* 하단 고정 바가 본문 콘텐츠를 가리지 않도록 하단 여백 확보 */
+    /* 하단 고정 바가 본문 콘텐츠를 가리지 않도록 넉넉한 하단 패딩 확보 */
     .block-container {
         padding-top: 0.6rem !important;
         padding-bottom: 90px !important;
@@ -53,43 +57,45 @@ st.markdown("""
         margin-bottom: 2px;
     }
     
-    /* 🚀 하단 플로팅 네비게이션 컨테이너 (100% 화면 최하단 고정) */
-    .floating-bottom-bar {
+    /* 🚀 실제 네이티브 증권 앱 스타일 100% 뷰포트 고정 플로팅 하단 바 */
+    .mobile-app-bottom-bar {
         position: fixed;
         bottom: 0;
         left: 0;
-        right: 0;
-        width: 100vw;
+        width: 100%;
+        height: 64px;
         background-color: #ffffff;
         border-top: 1.5px solid #e2e8f0;
-        padding: 6px 6px 12px 6px;
-        z-index: 999999;
-        box-shadow: 0 -4px 15px rgba(0,0,0,0.08);
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        z-index: 999999999;
+        box-shadow: 0 -3px 12px rgba(0,0,0,0.08);
+        padding-bottom: env(safe-area-inset-bottom, 5px);
     }
     
-    /* 하단 버튼 앱 전용 스타일 */
-    div.element-container:has(#bottom-nav-anchor) ~ div.element-container button,
-    div[data-testid="stHorizontalBlock"]:has(button[key^="nav_btn_"]) {
-        position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        width: 100vw !important;
-        background-color: #ffffff !important;
-        border-top: 1.5px solid #e2e8f0 !important;
-        padding: 6px 4px 12px 4px !important;
-        z-index: 999999 !important;
-        box-shadow: 0 -4px 15px rgba(0,0,0,0.08) !important;
-        margin: 0 !important;
+    .mobile-app-tab-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none !important;
+        color: #94a3b8 !important;
+        font-size: 0.68rem !important;
+        font-weight: 600 !important;
+        height: 100%;
+        transition: color 0.15s ease-in-out;
     }
     
-    div[data-testid="stHorizontalBlock"]:has(button[key^="nav_btn_"]) button {
-        height: 48px !important;
-        padding: 2px 0px !important;
-        line-height: 1.2 !important;
-        font-size: 0.72rem !important;
-        font-weight: 700 !important;
-        border-radius: 8px !important;
+    .mobile-app-tab-item.active {
+        color: #ff4b4b !important;
+        font-weight: 800 !important;
+    }
+    
+    .mobile-app-tab-icon {
+        font-size: 1.2rem;
+        margin-bottom: 2px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -297,14 +303,6 @@ with st.container(border=True):
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
     st.markdown(f"💡 <span style='font-size:0.82rem;'><b>가이드:</b> {market_regime['desc']}</span>", unsafe_allow_html=True)
     st.markdown(f"🎯 <span style='font-size:0.82rem;'><b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:bold; padding:2px 6px; border-radius:4px;'>{safe_alloc}</span></span>", unsafe_allow_html=True)
-
-# -------------------------------------------------------------
-# 5. 활성 탭 상태 관리
-# -------------------------------------------------------------
-if "active_nav_tab" not in st.session_state:
-    st.session_state["active_nav_tab"] = "screener"
-
-active_tab = st.session_state["active_nav_tab"]
 
 # -------------------------------------------------------------
 # TAB 1: 퀀트 스크리너
@@ -596,28 +594,29 @@ elif active_tab == "report":
             st.error(f"엑셀 분석 중 오류: {str(e)}")
 
 # -------------------------------------------------------------
-# 6. 하단 고정 내비게이션 바 (에러 없는 안전 레이아웃)
+# 6. 진짜 네이티브 앱 고정 하단 내비게이션 바 (100% 뷰포트 고정)
 # -------------------------------------------------------------
-st.markdown("<div id='bottom-nav-anchor'></div>", unsafe_allow_html=True)
-b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
-
-with b_col1:
-    if st.button("🎯\n스크리너", key="nav_btn_screener", use_container_width=True, type="primary" if active_tab=="screener" else "secondary"):
-        st.session_state["active_nav_tab"] = "screener"
-        st.rerun()
-with b_col2:
-    if st.button("📡\n포트", key="nav_btn_monitor", use_container_width=True, type="primary" if active_tab=="monitor" else "secondary"):
-        st.session_state["active_nav_tab"] = "monitor"
-        st.rerun()
-with b_col3:
-    if st.button("🔬\n백테스트", key="nav_btn_backtest", use_container_width=True, type="primary" if active_tab=="backtest" else "secondary"):
-        st.session_state["active_nav_tab"] = "backtest"
-        st.rerun()
-with b_col4:
-    if st.button("📢\n브리핑", key="nav_btn_briefing", use_container_width=True, type="primary" if active_tab=="briefing" else "secondary"):
-        st.session_state["active_nav_tab"] = "briefing"
-        st.rerun()
-with b_col5:
-    if st.button("🧠\n복기", key="nav_btn_report", use_container_width=True, type="primary" if active_tab=="report" else "secondary"):
-        st.session_state["active_nav_tab"] = "report"
-        st.rerun()
+st.markdown(f"""
+<div class="mobile-app-bottom-bar">
+    <a href="?tab=screener" target="_self" class="mobile-app-tab-item {'active' if active_tab=='screener' else ''}">
+        <div class="mobile-app-tab-icon">🎯</div>
+        <div>스크리너</div>
+    </a>
+    <a href="?tab=monitor" target="_self" class="mobile-app-tab-item {'active' if active_tab=='monitor' else ''}">
+        <div class="mobile-app-tab-icon">📡</div>
+        <div>포트폴리오</div>
+    </a>
+    <a href="?tab=backtest" target="_self" class="mobile-app-tab-item {'active' if active_tab=='backtest' else ''}">
+        <div class="mobile-app-tab-icon">🔬</div>
+        <div>백테스트</div>
+    </a>
+    <a href="?tab=briefing" target="_self" class="mobile-app-tab-item {'active' if active_tab=='briefing' else ''}">
+        <div class="mobile-app-tab-icon">📢</div>
+        <div>브리핑</div>
+    </a>
+    <a href="?tab=report" target="_self" class="mobile-app-tab-item {'active' if active_tab=='report' else ''}">
+        <div class="mobile-app-tab-icon">🧠</div>
+        <div>복기코칭</div>
+    </a>
+</div>
+""", unsafe_allow_html=True)
