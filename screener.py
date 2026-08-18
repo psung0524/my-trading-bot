@@ -1,3 +1,5 @@
+import os
+import time
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -5,6 +7,12 @@ import numpy as np
 from functools import lru_cache
 import re
 from concurrent.futures import ThreadPoolExecutor
+
+# HTTP 연결 세션 재활용 (속도 극대화)
+SESSION = requests.Session()
+SESSION.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+})
 
 def clean_num(val) -> float:
     if val is None:
@@ -58,13 +66,13 @@ class NaverStockScreener:
     }
 
     # =========================================================================
-    # 🚦 1. 지수 이평선 기반 시장 국면(Market Regime) 자동 진단
+    # 🚦 1. 지수 이평선 기반 시장 국면(Market Regime)
     # =========================================================================
     @staticmethod
     def get_market_regime() -> dict:
         try:
             url_kospi = "https://fchart.stock.naver.com/sise.nhn?symbol=KOSPI&timeframe=day&count=100&requestType=0"
-            res = requests.get(url_kospi, headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
+            res = SESSION.get(url_kospi, timeout=2.0)
             soup = BeautifulSoup(res.text, "html.parser")
             items = soup.select("item")
             closes = [float(item.get("data").split("|")[4]) for item in items if item.get("data")]
@@ -116,11 +124,10 @@ class NaverStockScreener:
         }
 
     # =========================================================================
-    # 🌐 2. 글로벌 매크로 지표 및 시가총액 크롤링
+    # 🌐 2. 글로벌 매크로 지표 & 업종 분류
     # =========================================================================
     @staticmethod
     def get_global_macro_data() -> dict:
-        headers = {"User-Agent": "Mozilla/5.0"}
         macro = {
             "nasdaq": ("나스닥", "+0.85%"),
             "sp500": ("S&P 500", "+0.52%"),
@@ -131,7 +138,7 @@ class NaverStockScreener:
         }
         try:
             url = "https://finance.naver.com/marketindex/"
-            res = requests.get(url, headers=headers, timeout=3)
+            res = SESSION.get(url, timeout=2.0)
             soup = BeautifulSoup(res.text, "html.parser")
             ex_rate = soup.select_one("div.head_info span.value")
             if ex_rate:
@@ -144,33 +151,11 @@ class NaverStockScreener:
         return macro
 
     @staticmethod
-    @lru_cache(maxsize=2500)
-    def fetch_market_cap(code: str) -> float:
-        url = f"https://finance.naver.com/item/main.naver?code={code}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        try:
-            res = requests.get(url, headers=headers, timeout=2)
-            soup = BeautifulSoup(res.content.decode("cp949", errors="ignore"), "html.parser")
-            em_sum = soup.select_one("em#_market_sum")
-            if em_sum:
-                txt = em_sum.text.strip().replace(',', '')
-                if '조' in txt:
-                    parts = txt.split('조')
-                    jo = float(parts[0].strip()) if parts[0].strip() else 0.0
-                    eok = float(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 0.0
-                    return (jo * 10000.0) + eok
-                return float(txt)
-        except Exception:
-            pass
-        return 0.0
-
-    @staticmethod
     @lru_cache(maxsize=1000)
     def fetch_naver_industry(code: str) -> str:
         url = f"https://finance.naver.com/item/main.naver?code={code}"
-        headers = {"User-Agent": "Mozilla/5.0"}
         try:
-            res = requests.get(url, headers=headers, timeout=2)
+            res = SESSION.get(url, timeout=1.5)
             soup = BeautifulSoup(res.content.decode("cp949", errors="ignore"), "html.parser")
             trade_comp = soup.select_one("div.trade_compare h4.h_sub a")
             if trade_comp:
@@ -217,10 +202,9 @@ class NaverStockScreener:
     @staticmethod
     def get_top_themes() -> list:
         url = "https://finance.naver.com/sise/theme.naver"
-        headers = {"User-Agent": "Mozilla/5.0"}
         themes = []
         try:
-            res = requests.get(url, headers=headers, timeout=5)
+            res = SESSION.get(url, timeout=2.5)
             soup = BeautifulSoup(res.content.decode("cp949", errors="ignore"), "html.parser")
             for tr in soup.select("table.theme tr"):
                 tds = tr.select("td")
@@ -238,7 +222,7 @@ class NaverStockScreener:
                     leader_name = "확인중"
                     member_stocks = []
                     try:
-                        d_res = requests.get(detail_url, headers=headers, timeout=3)
+                        d_res = SESSION.get(detail_url, timeout=1.5)
                         d_soup = BeautifulSoup(d_res.content.decode("cp949", errors="ignore"), "html.parser")
                         for ir in d_soup.select("table.type_5 tr"):
                             itd = ir.select("td")
@@ -252,20 +236,21 @@ class NaverStockScreener:
                     except Exception:
                         pass
                     themes.append({"theme_name": theme_name, "change_rate": change_rate, "leader": leader_name, "member_stocks": member_stocks})
-        except Exception as e:
-            print(f"테마 크롤링 오류: {e}")
-        return themes[:6]
+                if len(themes) >= 4:
+                    break
+        except Exception:
+            pass
+        return themes
 
     # =========================================================================
-    # 🔍 3. 300거래일 수집 & 120일선 대세 정배열 + 윗꼬리 매물 정밀 분석
+    # 🔍 3. 130거래일 경량 수집 & 정배열 고속 판별 (슬림화)
     # =========================================================================
     @staticmethod
     @lru_cache(maxsize=1500)
     def fetch_recent_candles_summary(code: str) -> dict:
-        url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count=300&requestType=0"
-        headers = {"User-Agent": "Mozilla/5.0"}
+        url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count=140&requestType=0"
         try:
-            res = requests.get(url, headers=headers, timeout=2.5)
+            res = SESSION.get(url, timeout=1.5)
             soup = BeautifulSoup(res.text, "html.parser")
             items = soup.select("item")
             records = []
@@ -292,10 +277,9 @@ class NaverStockScreener:
 
                 is_true_uptrend = (ma5 >= ma10) and (ma10 >= ma20) and (ma20 >= ma60) and (ma60 >= ma120) and (ma20 > ma20_prev5)
                 upper_tail_pct = ((curr['high'] - curr['close']) / curr['close']) * 100
-                is_clean_candle = upper_tail_pct <= 4.0
+                is_clean_candle = upper_tail_pct <= 4.5
 
-                lookback = min(240, len(df) - 1)
-                prev_52w_high_close = df['close'].iloc[-lookback-1:-1].max()
+                prev_52w_high_close = df['close'].iloc[:-1].max()
 
                 return {
                     "curr_close": curr['close'],
@@ -314,60 +298,58 @@ class NaverStockScreener:
         return {"valid": False}
 
     # =========================================================================
-    # 🎯 4. 당일 거래대금 300억↑ & 시총 1,000억↑ 실시간 주도주 스크리닝 (완화 & 고속화)
+    # 🎯 4. 거래대금 300억↑ & 시총 1,000억↑ 고속 병렬 스크리닝 (HTTP 제거)
     # =========================================================================
     @classmethod
     def get_market_ranking(cls, sosok: int = 0) -> list:
-        headers = {"User-Agent": "Mozilla/5.0"}
         market_name = "코스피" if sosok == 0 else "코스닥"
         candidates = []
 
-        url = f"https://finance.naver.com/sise/sise_quant.naver?sosok={sosok}"
-        try:
-            res = requests.get(url, headers=headers, timeout=5)
-            soup = BeautifulSoup(res.content.decode("cp949", errors="ignore"), "html.parser")
-            for tr in soup.select("table.type_2 tr"):
-                tds = tr.select("td")
-                if len(tds) < 10:
-                    continue
-                a_tag = tds[1].find("a")
-                if not a_tag:
-                    continue
-                name = a_tag.text.strip()
-                href = a_tag.get("href", "")
-                code = href.split("code=")[-1] if "code=" in href else ""
+        # 상위 1~3페이지(150종목) 일괄 수집
+        for page in range(1, 4):
+            url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
+            try:
+                res = SESSION.get(url, timeout=2.0)
+                soup = BeautifulSoup(res.content.decode("cp949", errors="ignore"), "html.parser")
+                for tr in soup.select("table.type_2 tr"):
+                    tds = tr.select("td")
+                    if len(tds) < 12:
+                        continue
+                    a_tag = tds[1].find("a")
+                    if not a_tag:
+                        continue
+                    name = a_tag.text.strip()
+                    href = a_tag.get("href", "")
+                    code = href.split("code=")[-1] if "code=" in href else ""
 
-                if any(x in name for x in ["스팩", "ETN", "TIGER", "KODEX", "ACE", "SOL", "RISE", "인버스", "레버리지", "우", "우B"]):
-                    continue
+                    if any(x in name for x in ["스팩", "ETN", "TIGER", "KODEX", "ACE", "SOL", "RISE", "인버스", "레버리지", "우", "우B"]):
+                        continue
 
-                curr_p = int(clean_num(tds[2].text))
-                change_rate = clean_num(tds[4].text)
-                trading_val_백만 = clean_num(tds[6].text)
-                trading_val_억 = round(trading_val_백만 / 100, 1)
+                    curr_p = int(clean_num(tds[2].text))
+                    change_rate = clean_num(tds[4].text)
+                    vol = clean_num(tds[9].text)
+                    cap_억 = clean_num(tds[12].text) if len(tds) > 12 else 1000.0
+                    trading_val_억 = round((curr_p * vol) / 100000000.0, 1)
 
-                # 💡 거래대금 기준 1,000억 -> 300억 완화 적용
-                if trading_val_억 < 300.0:
-                    continue
+                    # 💡 거래대금 300억 이상 & 시가총액 1,000억 이상 즉시 필터
+                    if trading_val_억 < 300.0 or cap_억 < 1000.0:
+                        continue
 
-                candidates.append({
-                    "market_name": market_name,
-                    "code": code,
-                    "name": name,
-                    "curr_p": curr_p,
-                    "change_rate": change_rate,
-                    "trading_val_억": trading_val_억
-                })
-        except Exception as e:
-            print(f"[{market_name}] 거래량 순위 파싱 오류: {e}")
-            return []
+                    candidates.append({
+                        "market_name": market_name,
+                        "code": code,
+                        "name": name,
+                        "curr_p": curr_p,
+                        "change_rate": change_rate,
+                        "trading_val_억": trading_val_억,
+                        "market_cap_억": int(cap_억)
+                    })
+            except Exception:
+                break
 
         def process_candidate(item):
             code = item["code"]
             name = item["name"]
-            market_cap_억 = cls.fetch_market_cap(code)
-            if market_cap_억 < 1000.0:
-                return None
-
             matched = []
             cs = cls.fetch_recent_candles_summary(code)
             change_rate = item["change_rate"]
@@ -385,22 +367,22 @@ class NaverStockScreener:
                     matched.append("A")
 
                 if is_uptrend and is_clean and prev_c >= ma10:
-                    if curr_l <= ma10 * 1.01 and curr_c >= ma10 * 0.985:
+                    if curr_l <= ma10 * 1.015 and curr_c >= ma10 * 0.98:
                         matched.append("B")
 
                 if is_uptrend and is_clean and prev_c >= ma20:
-                    if curr_l <= ma20 * 1.015 and curr_c >= ma20 * 0.98:
+                    if curr_l <= ma20 * 1.02 and curr_c >= ma20 * 0.975:
                         matched.append("C")
 
-                if curr_c > cs["prev_52w_high_close"] and change_rate >= 2.0 and curr_c > cs["curr_open"]:
+                if curr_c >= cs["prev_52w_high_close"] * 0.99 and change_rate >= 1.5 and curr_c > cs["curr_open"]:
                     matched.append("D")
 
-                if prev_c <= ma20 and curr_c > ma20 and change_rate >= 3.0:
+                if prev_c <= ma20 and curr_c > ma20 and change_rate >= 2.5:
                     matched.append("E")
             else:
                 if change_rate >= 14.5:
                     matched.append("A")
-                elif change_rate >= 5.0:
+                elif change_rate >= 4.0:
                     matched.append("E")
 
             if matched:
@@ -409,12 +391,13 @@ class NaverStockScreener:
                 return {
                     "시장": item["market_name"], "종목코드": code, "종목명": name,
                     "섹터정보": sec_info, "현재가": item["curr_p"], "등락률(%)": change_rate,
-                    "거래대금(억원)": item["trading_val_억"], "시가총액(억원)": int(market_cap_억),
+                    "거래대금(억원)": item["trading_val_억"], "시가총액(억원)": item["market_cap_억"],
                     "매칭전략": matched, "전략수": len(matched), "모멘텀점수": score
                 }
             return None
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        # 동시 처리 워커 20개로 고속 스캔
+        with ThreadPoolExecutor(max_workers=20) as executor:
             results = list(executor.map(process_candidate, candidates))
 
         return [r for r in results if r is not None]
@@ -431,18 +414,15 @@ class NaverStockScreener:
         return themes, df
 
     # =========================================================================
-    # 👑 5. 시장 전 테마 전수조사 & 정배열 주도 섹터 랭킹 엔진
+    # 👑 5. 시장 전 테마 전수조사 & 주도 섹터 랭킹 엔진
     # =========================================================================
     @classmethod
     def get_sector_uptrend_summary(cls) -> list:
-        url = "https://finance.naver.com/sise/theme.naver?&page=1"
-        headers = {"User-Agent": "Mozilla/5.0"}
         themes_to_scan = []
-
         try:
-            for p in range(1, 4):
+            for p in range(1, 3):
                 p_url = f"https://finance.naver.com/sise/theme.naver?&page={p}"
-                res = requests.get(p_url, headers=headers, timeout=4)
+                res = SESSION.get(p_url, timeout=2.0)
                 soup = BeautifulSoup(res.content.decode("cp949", errors="ignore"), "html.parser")
                 for tr in soup.select("table.theme tr"):
                     tds = tr.select("td")
@@ -463,38 +443,33 @@ class NaverStockScreener:
             t_name = theme_info["name"]
             t_href = theme_info["href"]
             detail_url = f"https://finance.naver.com{t_href}"
-            
             member_stocks = []
             try:
-                d_res = requests.get(detail_url, headers=headers, timeout=3)
+                d_res = SESSION.get(detail_url, timeout=1.5)
                 d_soup = BeautifulSoup(d_res.content.decode("cp949", errors="ignore"), "html.parser")
                 for ir in d_soup.select("table.type_5 tr"):
                     itd = ir.select("td")
                     if len(itd) < 6:
                         continue
                     ia = itd[0].find("a")
-                    if not ia:
-                        continue
-                    s_name = ia.text.strip()
-                    s_code = ia.get("href", "").split("code=")[-1] if "code=" in ia.get("href", "") else ""
-                    if s_code:
-                        member_stocks.append({"name": s_name, "code": s_code})
+                    if ia:
+                        s_name = ia.text.strip()
+                        s_code = ia.get("href", "").split("code=")[-1] if "code=" in ia.get("href", "") else ""
+                        if s_code:
+                            member_stocks.append({"name": s_name, "code": s_code})
             except Exception:
                 return None
 
             uptrend_stocks = []
             valid_count = 0
-
-            for st in member_stocks[:20]:
-                code = st["code"]
-                mcap = cls.fetch_market_cap(code)
-                if mcap >= 1000.0:
+            for st in member_stocks[:15]:
+                cs = cls.fetch_recent_candles_summary(st["code"])
+                if cs.get("valid"):
                     valid_count += 1
-                    cs = cls.fetch_recent_candles_summary(code)
-                    if cs.get("valid") and cs.get("is_true_uptrend"):
+                    if cs.get("is_true_uptrend"):
                         uptrend_stocks.append(st["name"])
 
-            if valid_count >= 3 and len(uptrend_stocks) >= 2:
+            if valid_count >= 3 and len(uptrend_stocks) >= 1:
                 palette_key = "기타주도주"
                 for k in cls.SECTOR_PALETTE.keys():
                     if any(w in t_name for w in k.split("/")):
@@ -513,12 +488,11 @@ class NaverStockScreener:
                 }
             return None
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            scanned = list(executor.map(analyze_single_theme, themes_to_scan[:40]))
+        with ThreadPoolExecutor(max_workers=15) as executor:
+            scanned = list(executor.map(analyze_single_theme, themes_to_scan[:30]))
 
         valid_results = [r for r in scanned if r is not None]
-        sorted_ranks = sorted(valid_results, key=lambda x: (x["uptrend_count"], x["uptrend_ratio"]), reverse=True)
-        return sorted_ranks
+        return sorted(valid_results, key=lambda x: (x["uptrend_count"], x["uptrend_ratio"]), reverse=True)
 
     # =========================================================================
     # 📢 6. 4대 타임라인 텔레그램 브리핑 생성기
@@ -544,7 +518,6 @@ class NaverStockScreener:
     def generate_0850_nxt_briefing(cls) -> str:
         themes, df = cls.run_multi_strategy_screen()
         regime = cls.get_market_regime()
-        today_str = pd.Timestamp.now().strftime('%Y-%m-%d')
         msg = f"🌅 *[08:50 장전 프리마켓 & NXT 테마/골든픽 브리핑]*\n🚦 시장 국면: {regime['badge']}\n\n"
         msg += "🔥 *NXT/장전 거래 주도 테마 TOP 3*\n"
         for i, t in enumerate(themes[:3]):
@@ -567,7 +540,6 @@ class NaverStockScreener:
         total_money = int(df['거래대금(억원)'].sum()) if not df.empty else 0
         msg = f"⚡ *[{time_label} 실시간 주도섹터 & 자금 쏠림 브리핑]*\n"
         msg += f"📊 300억 이상 주도주 자금 집중 규모: *약 {total_money:,}억 원*\n\n"
-        
         msg += "👑 *실시간 1등 주도 테마 & 대장주 현황*\n"
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* *(+{t['change_rate']}%)*\n"
@@ -585,14 +557,13 @@ class NaverStockScreener:
         return msg
 
     # =========================================================================
-    # ⚡ 7. 20년 수정주가 로드 및 백테스팅 엔진
+    # ⚡ 7. 20년 백테스팅 엔진
     # =========================================================================
     @staticmethod
     def fetch_historical_daily_candles(code: str, target_days: int = 5000) -> pd.DataFrame:
         url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={target_days}&requestType=0"
-        headers = {"User-Agent": "Mozilla/5.0"}
         try:
-            res = requests.get(url, headers=headers, timeout=5)
+            res = SESSION.get(url, timeout=3.5)
             soup = BeautifulSoup(res.text, "html.parser")
             records = []
             for item in soup.select("item"):
@@ -612,8 +583,8 @@ class NaverStockScreener:
             if records:
                 df = pd.DataFrame(records)
                 return df.sort_values(by="date", ascending=True).reset_index(drop=True)
-        except Exception as e:
-            print(f"차트 데이터 수집 오류: {e}")
+        except Exception:
+            pass
         return pd.DataFrame()
 
     @classmethod
@@ -764,23 +735,23 @@ class NaverStockScreener:
                         buy_signal = True
 
                 elif strategy_type == "B":
-                    if is_true_uptrend and upper_tail_pct <= 4.0 and prev['close'] >= prev['ma10']:
-                        if curr['low'] <= curr['ma10'] * 1.01 and curr['close'] >= curr['ma10'] * 0.985:
+                    if is_true_uptrend and upper_tail_pct <= 4.5 and prev['close'] >= prev['ma10']:
+                        if curr['low'] <= curr['ma10'] * 1.015 and curr['close'] >= curr['ma10'] * 0.98:
                             buy_signal = True
 
                 elif strategy_type == "C":
-                    if is_true_uptrend and upper_tail_pct <= 4.0 and prev['close'] >= prev['ma20']:
-                        if curr['low'] <= curr['ma20'] * 1.015 and curr['close'] >= curr['ma20'] * 0.98:
+                    if is_true_uptrend and upper_tail_pct <= 4.5 and prev['close'] >= prev['ma20']:
+                        if curr['low'] <= curr['ma20'] * 1.02 and curr['close'] >= curr['ma20'] * 0.975:
                             buy_signal = True
 
                 elif strategy_type == "D":
                     lookback_len = min(240, i)
                     prev_high_close = df.iloc[i - lookback_len : i]['close'].max()
-                    if curr['close'] > prev_high_close and curr['close'] > curr['open'] and change_pct >= 2.0:
+                    if curr['close'] >= prev_high_close * 0.99 and curr['close'] > curr['open'] and change_pct >= 1.5:
                         buy_signal = True
 
                 elif strategy_type == "E":
-                    if prev['close'] <= prev['ma20'] and curr['close'] > curr['ma20'] and change_pct >= 3.0:
+                    if prev['close'] <= prev['ma20'] and curr['close'] > curr['ma20'] and change_pct >= 2.5:
                         buy_signal = True
 
                 if buy_signal:
