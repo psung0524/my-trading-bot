@@ -1,5 +1,3 @@
-import os
-import time
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -8,7 +6,6 @@ from functools import lru_cache
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-# HTTP 연결 세션 재활용 (속도 극대화)
 SESSION = requests.Session()
 SESSION.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -65,9 +62,6 @@ class NaverStockScreener:
         "253590": ("반도체/IT", "CXL테스터"), "058610": ("로봇/AI/자동화", "감속기")
     }
 
-    # =========================================================================
-    # 🚦 1. 지수 이평선 기반 시장 국면(Market Regime)
-    # =========================================================================
     @staticmethod
     def get_market_regime() -> dict:
         try:
@@ -123,9 +117,6 @@ class NaverStockScreener:
             "recommended_strategy": "D", "alloc_guide": "주식 80% / 현금 20%"
         }
 
-    # =========================================================================
-    # 🌐 2. 글로벌 매크로 지표 & 업종 분류
-    # =========================================================================
     @staticmethod
     def get_global_macro_data() -> dict:
         macro = {
@@ -134,7 +125,8 @@ class NaverStockScreener:
             "dow": ("다우존스", "+0.31%"),
             "us10y": ("미 국채 10년물", "4.28%"),
             "wti": ("WTI 원유", "$78.40"),
-            "usdkrw": ("원/달러 환율", "1,342.50원")
+            "usdkrw": ("원/달러 환율", "1,342.50원"),
+            "night_future": ("코스피200 야간선물", "385.50 (+0.45%)")
         }
         try:
             url = "https://finance.naver.com/marketindex/"
@@ -242,9 +234,6 @@ class NaverStockScreener:
             pass
         return themes
 
-    # =========================================================================
-    # 🔍 3. 130거래일 경량 수집 & 정배열 고속 판별 (슬림화)
-    # =========================================================================
     @staticmethod
     @lru_cache(maxsize=1500)
     def fetch_recent_candles_summary(code: str) -> dict:
@@ -297,15 +286,11 @@ class NaverStockScreener:
             pass
         return {"valid": False}
 
-    # =========================================================================
-    # 🎯 4. 거래대금 300억↑ & 시총 1,000억↑ 고속 병렬 스크리닝 (HTTP 제거)
-    # =========================================================================
     @classmethod
     def get_market_ranking(cls, sosok: int = 0) -> list:
         market_name = "코스피" if sosok == 0 else "코스닥"
         candidates = []
 
-        # 상위 1~3페이지(150종목) 일괄 수집
         for page in range(1, 4):
             url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
             try:
@@ -331,7 +316,6 @@ class NaverStockScreener:
                     cap_억 = clean_num(tds[12].text) if len(tds) > 12 else 1000.0
                     trading_val_억 = round((curr_p * vol) / 100000000.0, 1)
 
-                    # 💡 거래대금 300억 이상 & 시가총액 1,000억 이상 즉시 필터
                     if trading_val_억 < 300.0 or cap_억 < 1000.0:
                         continue
 
@@ -396,7 +380,6 @@ class NaverStockScreener:
                 }
             return None
 
-        # 동시 처리 워커 20개로 고속 스캔
         with ThreadPoolExecutor(max_workers=20) as executor:
             results = list(executor.map(process_candidate, candidates))
 
@@ -413,9 +396,6 @@ class NaverStockScreener:
         df = pd.DataFrame(all_stocks).sort_values(by=["전략수", "모멘텀점수"], ascending=[False, False]).reset_index(drop=True)
         return themes, df
 
-    # =========================================================================
-    # 👑 5. 시장 전 테마 전수조사 & 주도 섹터 랭킹 엔진
-    # =========================================================================
     @classmethod
     def get_sector_uptrend_summary(cls) -> list:
         themes_to_scan = []
@@ -495,30 +475,32 @@ class NaverStockScreener:
         return sorted(valid_results, key=lambda x: (x["uptrend_count"], x["uptrend_ratio"]), reverse=True)
 
     # =========================================================================
-    # 📢 6. 4대 타임라인 텔레그램 브리핑 생성기
+    # 📢 고도화된 4대 타임라인 텔레그램 브리핑 센터 (야간선물 & 투자자 핵심 가이드 포함)
     # =========================================================================
     @classmethod
     def generate_0800_global_briefing(cls) -> str:
         macro = cls.get_global_macro_data()
         regime = cls.get_market_regime()
         today_str = pd.Timestamp.now().strftime('%Y-%m-%d')
-        msg = f"🌐 *[08:00 모닝 글로벌 매크로 & 국내 증시 영향 브리핑]*\n📅 {today_str} 개장 전 글로벌 핵심 체크\n\n"
-        msg += "📊 *지난밤 뉴욕 증시 & 주요 매크로 지표*\n"
+        msg = f"🌐 *[08:00 모닝 글로벌 매크로 & 야간선물 동향 브리핑]*\n📅 {today_str} 개장 전 글로벌 핵심 체크\n\n"
+        msg += "📊 *글로벌 증시 마감 & 야간선물 지표*\n"
         msg += f"• 나스닥: `{macro['nasdaq'][1]}` | S&P 500: `{macro['sp500'][1]}`\n"
+        msg += f"• 🌙 **코스피200 야간선물**: `{macro['night_future'][1]}`\n"
         msg += f"• 미 10년물 국채금리: `{macro['us10y'][1]}` | WTI 유가: `{macro['wti'][1]}`\n"
         msg += f"• 원/달러 환율: `{macro['usdkrw'][1]}`\n\n"
-        msg += "💡 *글로벌 빅테크 뉴스 & 한국 시장 영향 분석*\n"
-        msg += "• **AI/반도체 섹터**: 미 기술주 반등세로 국내 HBM 및 반도체 소부장 갭상승 출발 유력\n"
-        msg += "• **환율/금리 영향**: 안정적 환율 흐름 속 외국인 순매수 유입 기대감 지속\n"
+        msg += "💡 *야간 시장 연동 및 국내 증시 영향 분석*\n"
+        msg += "• **야간선물 포인트**: 야간 마감 방향성과 환율 안착으로 국내 증시 시가 예상 강세 갭출발 유력\n"
+        msg += "• **주요 섹터 전망**: 반도체 소부장 및 야간 수급 유입 테마 중심 순환매 대응\n"
         msg += f"• **시장 종합 판단**: {regime['badge']}\n"
-        msg += f"  (권장 전략: *{regime['alloc_guide']}* 유지)"
+        msg += f"  (권장 포지션: *{regime['alloc_guide']}*)"
         return msg
 
     @classmethod
     def generate_0850_nxt_briefing(cls) -> str:
         themes, df = cls.run_multi_strategy_screen()
         regime = cls.get_market_regime()
-        msg = f"🌅 *[08:50 장전 프리마켓 & NXT 테마/골든픽 브리핑]*\n🚦 시장 국면: {regime['badge']}\n\n"
+        today_str = pd.Timestamp.now().strftime('%Y-%m-%d')
+        msg = f"🌅 *[08:50 프리마켓 & NXT 테마/골든픽 브리핑]*\n📅 {today_str} 개장 직전 최종 점검\n🚦 시장 국면: {regime['badge']}\n\n"
         msg += "🔥 *NXT/장전 거래 주도 테마 TOP 3*\n"
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 대장: `{t['leader']}`\n"
@@ -531,7 +513,7 @@ class NaverStockScreener:
                 msg += f"  현재가: `{r['현재가']:,}원` (+{r['등락률(%)']}%) | 거래대금: `{r['거래대금(억원)']:,}억` | 시총: `{r['시가총액(억원)']:,}억`\n"
         else:
             msg += "• 거래대금 300억 이상 강력 수급 유입 종목 탐색 중\n"
-        msg += f"\n🎯 *오늘의 행동 강령*: {regime['desc']}"
+        msg += f"\n🎯 *오늘의 매매 원칙 가이드*\n• {regime['desc']}"
         return msg
 
     @classmethod
@@ -545,15 +527,18 @@ class NaverStockScreener:
             msg += f"{i+1}. *{t['theme_name']}* *(+{t['change_rate']}%)*\n"
             msg += f"   └ 1등 대장주: `{t['leader']}` (수급 집중 분출)\n"
             
-        msg += "\n💎 *오전장 거래대금 300억↑ TOP 3 주도주*\n"
+        msg += f"\n💎 *{time_label} 기준 거래대금 300억↑ TOP 3 주도주*\n"
         top3 = df.head(3)
         if not top3.empty:
             for idx, (_, r) in enumerate(top3.iterrows()):
                 sec = r['섹터정보']
+                calc_stop = int(r['현재가'] * 0.94)
+                calc_tp3r = int(r['현재가'] * 1.18)
                 msg += f"{idx+1}. *{r['종목명']}* {sec['emoji']} (`{r['거래대금(억원)']:,}억 원` 유입)\n"
-                msg += f"   현재가: `{r['현재가']:,}원` (*+{r['등락률(%)']}%*) | 시총: `{r['시가총액(억원)']:,}억` | {sec['category']}\n"
+                msg += f"   현재가: `{r['현재가']:,}원` (*+{r['등락률(%)']}%*) | {sec['category']}\n"
+                msg += f"   🛑 손절선: `{calc_stop:,}원 (-6%)` | 🎯 3R목표가: `{calc_tp3r:,}원 (+18%)`\n"
                 
-        msg += "\n💡 *매매 코칭*: 전고점 돌파 주도주는 3R 분할익절, 10/20일선 정배열 눌림목 지지 확인 후 진입 권장."
+        msg += "\n💡 *실전 트레이딩 코칭*: 전고점 돌파 주도주는 3R 도달 시 50% 분할 익절 후 나머지는 추세 추종 권장."
         return msg
 
     # =========================================================================
