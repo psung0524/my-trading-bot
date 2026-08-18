@@ -274,7 +274,7 @@ def save_watchlist(user_id: str, watchlist):
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
 # -------------------------------------------------------------
-# 4. 캐싱 & 시세 조회 엔진 (💡 명확한 로딩 스피너 적용)
+# 4. 캐싱 & 시세 조회 엔진
 # -------------------------------------------------------------
 @st.cache_data(ttl=180, show_spinner=False)
 def get_cached_screener_data():
@@ -591,7 +591,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (💡 명확한 로딩 스피너 적용)
+# TAB 1: 퀀트 스크리너
 # -------------------------------------------------------------
 if active_tab == "screener":
     st.markdown("#### 🔥 주도 테마 & 300억↑ 메이저 주도주")
@@ -607,8 +607,7 @@ if active_tab == "screener":
         st.cache_data.clear()
         st.rerun()
 
-    # 💡 멈춘 것처럼 보이지 않도록 로딩 스피너 배치
-    with st.spinner("⏳ 실시간 시장 주도주 및 5대 전략 스캐닝 중... (잠시만 기다려주세요)"):
+    with st.spinner("⏳ 실시간 시장 주도주 및 5대 전략 스캐닝 중..."):
         themes_data, all_df = get_cached_screener_data()
     
     top_themes = themes_data
@@ -710,7 +709,7 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오
+# TAB 2: 감시 포트폴리오 (💡 로딩 스피너 적용)
 # -------------------------------------------------------------
 elif active_tab == "monitor":
     st.markdown(f"#### 📡 [{current_user}] 감시 포트폴리오 & 5% 변동 알림")
@@ -774,7 +773,8 @@ elif active_tab == "monitor":
         st.info(f"[{current_user}] 계정에 감시 중인 종목이 없습니다. 위에서 종목을 검색해 등록하세요.")
     else:
         all_codes = [item['code'] for item in current_list]
-        batch_prices = fetch_batch_realtime_prices(all_codes)
+        with st.spinner("⏳ 포트폴리오 감시 종목 실시간 시세 일괄 조회 중..."):
+            batch_prices = fetch_batch_realtime_prices(all_codes)
 
         updated = False
         for item in current_list:
