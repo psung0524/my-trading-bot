@@ -6,3 +6,6 @@ python-dotenv
 google-genai
 openai
 openpyxl
+yfinance
+lxml
+schedule
