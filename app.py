@@ -4,10 +4,22 @@ import os
 import pandas as pd
 from datetime import datetime
 
-# 원본 screener.py의 800줄 코드를 완벽하게 연결
+# 1. screener & notifier 모듈 임포트
 from screener import NaverStockScreener, clean_num
 from notifier import TelegramNotifier
-from main import SamsungSecuritiesParser, TradeFIFOEngine, TradingMetricsAnalyzer, GeminiTradeCoach
+
+# 2. main.py 안전 임포트 (클래스명 불일치로 인한 크래시 원천 방지)
+try:
+    import main
+    SamsungSecuritiesParser = getattr(main, 'SamsungSecuritiesParser', None)
+    TradeFIFOEngine = getattr(main, 'TradeFIFOEngine', None)
+    TradingMetricsAnalyzer = getattr(main, 'TradingMetricsAnalyzer', None)
+    GeminiTradeCoach = getattr(main, 'GeminiTradeCoach', getattr(main, 'TradeCoach', getattr(main, 'OpenAITradeCoach', None)))
+except Exception:
+    SamsungSecuritiesParser = None
+    TradeFIFOEngine = None
+    TradingMetricsAnalyzer = None
+    GeminiTradeCoach = None
 
 # -------------------------------------------------------------
 # 1. 모바일 최적화 페이지 설정 및 반응형 CSS
@@ -23,36 +35,28 @@ st.set_page_config(
 st.markdown("""
 <style>
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 0.8rem !important;
         padding-bottom: 2rem !important;
-        padding-left: 0.8rem !important;
-        padding-right: 0.8rem !important;
+        padding-left: 0.7rem !important;
+        padding-right: 0.7rem !important;
     }
     .main-title {
-        font-size: 1.35rem !important;
+        font-size: 1.3rem !important;
         font-weight: 800;
         margin-bottom: 0.5rem;
         line-height: 1.3;
-    }
-    .mobile-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 12px 14px;
-        margin-bottom: 12px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .stButton button {
         width: 100% !important;
         border-radius: 8px !important;
         font-weight: 600 !important;
-        padding: 0.5rem 1rem !important;
+        padding: 0.5rem 0.8rem !important;
     }
     .badge-span {
         display: inline-block;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: 0.75rem;
+        padding: 2px 7px;
+        border-radius: 5px;
+        font-size: 0.72rem;
         font-weight: 700;
         margin-right: 4px;
     }
@@ -115,12 +119,12 @@ with st.sidebar:
 # -------------------------------------------------------------
 # 4. 상단 타이틀 및 모바일 내비게이션
 # -------------------------------------------------------------
-st.markdown('<div class="main-title">📈 AI 트레이딩 코치 & 주도주 센터</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">📈 AI 트레이딩 코치 & 자율 센터</div>', unsafe_allow_html=True)
 
 # 원본 스크리너 인스턴스 생성
 screener = NaverStockScreener()
 
-# 모바일 친화적 상단 메뉴 선택기
+# 상단 모바일 메뉴 전환기
 menu = st.selectbox(
     "메뉴 선택",
     [
@@ -156,13 +160,13 @@ if "1. 주도 섹터" in menu:
         
     with st.spinner(f"[{NaverStockScreener.STRATEGIES[selected_strat_key]['name']}] 스캔 중..."):
         try:
-            # 원본 스크리너 메서드 호출
+            df = None
             if hasattr(screener, 'scan_strategy'):
                 df = screener.scan_strategy(selected_strat_key)
             elif hasattr(screener, 'get_stocks_by_strategy'):
                 df = screener.get_stocks_by_strategy(selected_strat_key)
-            else:
-                df = None
+            elif hasattr(screener, 'run_screener'):
+                df = screener.run_screener(selected_strat_key)
                 
             if df is not None and not df.empty:
                 st.markdown(f"**포착된 종목 ({len(df)}개)**")
@@ -213,14 +217,14 @@ elif "2. 텔레그램" in menu:
                 msg = screener.generate_briefing_0800() if hasattr(screener, 'generate_briefing_0800') else "🌅 [08:00 개장전 전략 브리핑 전송 완료]"
                 ok = bot.send_message(msg)
                 if ok: st.success("08:00 브리핑 발송 완료!")
-                else: st.error("발송 실패 (토큰 확인)")
+                else: st.error("발송 실패 (토큰/Chat ID 확인)")
                 
         if st.button("🔔 08:50 장전 주도주", use_container_width=True):
             with st.spinner("08:50 브리핑 생성 및 전송 중..."):
                 msg = screener.generate_briefing_0850() if hasattr(screener, 'generate_briefing_0850') else "🔔 [08:50 동시호가 주도주 브리핑 전송 완료]"
                 ok = bot.send_message(msg)
                 if ok: st.success("08:50 브리핑 발송 완료!")
-                else: st.error("발송 실패 (토큰 확인)")
+                else: st.error("발송 실패 (토큰/Chat ID 확인)")
                 
     with c2:
         if st.button("🚀 09:30 거래대금 폭발", use_container_width=True):
@@ -228,14 +232,14 @@ elif "2. 텔레그램" in menu:
                 msg = screener.generate_briefing_0930() if hasattr(screener, 'generate_briefing_0930') else "🚀 [09:30 거래대금 폭발 브리핑 전송 완료]"
                 ok = bot.send_message(msg)
                 if ok: st.success("09:30 브리핑 발송 완료!")
-                else: st.error("발송 실패 (토큰 확인)")
+                else: st.error("발송 실패 (토큰/Chat ID 확인)")
                 
         if st.button("🎯 10:00 오전장 확정", use_container_width=True):
             with st.spinner("10:00 브리핑 생성 및 전송 중..."):
                 msg = screener.generate_briefing_1000() if hasattr(screener, 'generate_briefing_1000') else "🎯 [10:00 오전장 확정 섹터 브리핑 전송 완료]"
                 ok = bot.send_message(msg)
                 if ok: st.success("10:00 브리핑 발송 완료!")
-                else: st.error("발송 실패 (토큰 확인)")
+                else: st.error("발송 실패 (토큰/Chat ID 확인)")
 
 # -------------------------------------------------------------
 # 메뉴 3: 손절선 자율 감시 가디언
@@ -304,27 +308,30 @@ elif "4. 매매일지" in menu:
     uploaded_file = st.file_uploader("삼성증권 거래내역 엑셀(.xlsx) 업로드", type=["xlsx", "xls"])
     
     if uploaded_file:
-        try:
-            parser = SamsungSecuritiesParser(uploaded_file)
-            raw_trades = parser.parse()
-            engine = TradeFIFOEngine()
-            completed_trades = engine.process(raw_trades)
-            analyzer = TradingMetricsAnalyzer(completed_trades)
-            metrics = analyzer.calculate()
-            
-            c1, c2 = st.columns(2)
-            c1.metric("총 실현손익", f"{metrics['total_pnl']:,}원")
-            c2.metric("승률", f"{metrics['win_rate']:.1f}%")
-            
-            if st.button("🤖 Gemini AI 복기 진단 받기", use_container_width=True):
-                g_key = config.get("GEMINI_API_KEY", "")
-                if g_key:
-                    with st.spinner("AI가 매매 패턴을 정밀 분석 중입니다..."):
-                        coach = GeminiTradeCoach(api_key=g_key)
-                        feedback = coach.generate_feedback(metrics)
-                        st.markdown("---")
-                        st.markdown(feedback)
-                else:
-                    st.warning("사이드바에서 Gemini API 키를 먼저 입력해주세요.")
-        except Exception as e:
-            st.error(f"엑셀 분석 중 오류: {str(e)}")
+        if SamsungSecuritiesParser and TradeFIFOEngine and TradingMetricsAnalyzer:
+            try:
+                parser = SamsungSecuritiesParser(uploaded_file)
+                raw_trades = parser.parse()
+                engine = TradeFIFOEngine()
+                completed_trades = engine.process(raw_trades)
+                analyzer = TradingMetricsAnalyzer(completed_trades)
+                metrics = analyzer.calculate()
+                
+                c1, c2 = st.columns(2)
+                c1.metric("총 실현손익", f"{metrics['total_pnl']:,}원")
+                c2.metric("승률", f"{metrics['win_rate']:.1f}%")
+                
+                if st.button("🤖 Gemini AI 복기 진단 받기", use_container_width=True):
+                    g_key = config.get("GEMINI_API_KEY", "")
+                    if g_key and GeminiTradeCoach:
+                        with st.spinner("AI가 매매 패턴을 정밀 분석 중입니다..."):
+                            coach = GeminiTradeCoach(api_key=g_key)
+                            feedback = coach.generate_feedback(metrics)
+                            st.markdown("---")
+                            st.markdown(feedback)
+                    else:
+                        st.warning("사이드바에서 Gemini API 키를 먼저 입력해주세요.")
+            except Exception as e:
+                st.error(f"엑셀 분석 중 오류: {str(e)}")
+        else:
+            st.info("매매일지 분석 모듈(main.py) 로드 대기 중입니다.")
