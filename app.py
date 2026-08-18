@@ -7,7 +7,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 from google import genai
 
-# 원본 모듈 임포트 (100% 기능 유지)
 from main import SamsungSecuritiesParser, TradeFIFOEngine, TradingMetricsAnalyzer, get_best_available_model
 from screener import NaverStockScreener
 from notifier import TelegramNotifier
@@ -30,21 +29,18 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* 모바일 전체 여백 최적화 */
     .block-container {
         padding-top: 0.8rem !important;
         padding-bottom: 2.5rem !important;
         padding-left: 0.6rem !important;
         padding-right: 0.6rem !important;
     }
-    /* 모바일 메인 타이틀 */
     .mobile-header-title {
         font-size: 1.25rem !important;
         font-weight: 800;
         margin-bottom: 0.4rem;
         line-height: 1.3;
     }
-    /* 모바일 버튼 터치 최적화 */
     .stButton button {
         width: 100% !important;
         border-radius: 8px !important;
@@ -52,7 +48,6 @@ st.markdown("""
         padding: 0.45rem 0.6rem !important;
         font-size: 0.85rem !important;
     }
-    /* 뱃지 및 태그 */
     .badge-span {
         display: inline-block;
         padding: 2px 6px;
@@ -62,7 +57,6 @@ st.markdown("""
         margin-right: 3px;
         margin-bottom: 2px;
     }
-    /* 메트릭 폰트 최적화 */
     div[data-testid="stMetricValue"] {
         font-size: 1.15rem !important;
     }
@@ -78,7 +72,6 @@ def load_saved_credentials():
         "tg_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
         "tg_chat_id": os.getenv("TELEGRAM_CHAT_ID", "")
     }
-    # Streamlit Secrets 우선 호환
     try:
         creds["gemini_api_key"] = st.secrets.get("GEMINI_API_KEY", creds["gemini_api_key"])
         creds["tg_token"] = st.secrets.get("TELEGRAM_BOT_TOKEN", creds["tg_token"])
@@ -236,30 +229,26 @@ with st.sidebar:
                 st.warning("토큰과 ID를 입력하세요.")
 
 # -------------------------------------------------------------
-# 4. 상단 헤더 & 모바일 국면 카드 (지수 강조 & 취소선 버그 수정)
+# 4. 상단 헤더 & 모바일 국면 카드 (지수 강조 & 취소선 방지)
 # -------------------------------------------------------------
-st.markdown('<div class="mobile-header-title">📈 AI 트레이딩 코치 & 자율 센터</div>', unsafe_allow_html=True)
+st.markdown('<div class="mobile-header-title">📈 AI 트레이딩 코치 & 주도주 센터</div>', unsafe_allow_html=True)
 
 market_regime = NaverStockScreener.get_market_regime()
 
-# 취소선 방지 (~ 기호를 안전한 전각 문자 또는 - 로 치환)
+# 취소선 방지 치환
 safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
 
-# 코스피 지수 데이터
-kospi_pt = market_regime.get('kospi_close', '2,650.00')
+kospi_pt = str(market_regime.get('kospi_close', '2,650.00'))
 kospi_chg = str(market_regime.get('kospi_change_pct', '0.0'))
 kospi_color = "#e03131" if not kospi_chg.startswith("-") and kospi_chg != "0.0" else ("#1971c2" if kospi_chg.startswith("-") else "#333333")
 
-# 코스닥 지수 연동 (screener에 없을 경우 안전 기본 처리)
-kosdaq_pt = market_regime.get('kosdaq_close', '860.50')
+kosdaq_pt = str(market_regime.get('kosdaq_close', '860.50'))
 kosdaq_chg = str(market_regime.get('kosdaq_change_pct', '-0.85'))
 kosdaq_color = "#e03131" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#1971c2" if kosdaq_chg.startswith("-") else "#333333")
 
 with st.container(border=True):
-    # 1. 시장 국면 타이틀
     st.markdown(f"<div style='font-size: 1.05rem; font-weight: 800; margin-bottom: 6px;'>{market_regime['badge']}</div>", unsafe_allow_html=True)
     
-    # 2. 코스피 / 코스닥 시세 강조 카드 (2열 배치)
     col_idx1, col_idx2 = st.columns(2)
     with col_idx1:
         st.markdown(f"""
@@ -272,13 +261,11 @@ with st.container(border=True):
         st.markdown(f"""
         <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 10px; text-align: center;'>
             <div style='font-size: 0.75rem; color: #64748b; font-weight: bold;'>KOSDAQ 코스닥</div>
-            <div style='font-size: 1.1rem; font-weight: 800; color: {kospi_color if kosdaq_chg.startswith("+") else kosdaq_color};'>{kosdaq_pt} <span style='font-size: 0.8rem;'>({kosdaq_chg}%)</span></div>
+            <div style='font-size: 1.1rem; font-weight: 800; color: {kosdaq_color};'>{kosdaq_pt} <span style='font-size: 0.8rem;'>({kosdaq_chg}%)</span></div>
         </div>
         """, unsafe_allow_html=True)
         
     st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
-    
-    # 3. 가이드 및 권장 비중 (취소선 없이 선명하게 표시)
     st.markdown(f"💡 <span style='font-size:0.83rem;'><b>가이드:</b> {market_regime['desc']}</span>", unsafe_allow_html=True)
     st.markdown(f"🎯 <span style='font-size:0.83rem;'><b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:bold; padding:2px 6px; border-radius:4px;'>{safe_alloc}</span></span>", unsafe_allow_html=True)
 
@@ -298,31 +285,13 @@ selected_tab = st.selectbox(
 )
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너
+# TAB 1: 퀀트 스크리너 (빠른 로딩 & 주도주 중심)
 # -------------------------------------------------------------
 if "1. 퀀트 스크리너" in selected_tab:
-    st.markdown("#### 👑 전 종목 대상 완전 정배열 최다 집중 섹터")
-    with st.spinner("코스피/코스닥 전체 업종 전수 스캔 및 120일 정배열 종목 집계 중..."):
-        sector_ranks = NaverStockScreener.get_sector_uptrend_summary()
-
-    if sector_ranks:
-        top_sec = sector_ranks[0]
-        st.info(f"🔥 정배열 1위: **{top_sec['emoji']} {top_sec['sector']}** (정배열 **{top_sec['uptrend_count']}개** / 비중 **{top_sec['uptrend_ratio']}%**)")
-        
-        for i in range(min(3, len(sector_ranks))):
-            sec = sector_ranks[i]
-            with st.expander(f"{i+1}위. {sec['emoji']} {sec['sector']} (+{sec['change_rate']}%) - 정배열 {sec['uptrend_count']}개", expanded=(i==0)):
-                st.markdown(f"• **정배열 종목수**: `{sec['uptrend_count']} / {sec['total_count']}개` (*{sec['uptrend_ratio']}%*)")
-                if sec['uptrend_stocks']:
-                    st.caption("📈 주도주: " + ", ".join(sec['uptrend_stocks'][:5]))
-    else:
-        st.warning("⚠️ 현재 완전 정배열을 유지 중인 업종이 없습니다.")
-
-    st.divider()
     st.markdown("#### 🔥 시장 주도 테마 & 1,000억↑ 메이저 주도주")
     c_btn, c_slider = st.columns([1, 2])
     with c_btn:
-        run_scan = st.button("🔄 전 종목 스캔", use_container_width=True)
+        run_scan = st.button("🔄 실시간 스캔", use_container_width=True)
     with c_slider:
         default_stop_pct = st.slider("기본 손절선 (%)", min_value=2.0, max_value=12.0, value=6.0, step=0.5)
 
@@ -588,7 +557,7 @@ elif "5. 매매복기" in selected_tab:
             
             c3, c4 = st.columns(2)
             c3.metric("손익비", f"{ov.get('risk_reward_ratio', 0)}")
-            c4.metric("실현손익", f"{ov.get('total_net_pnl', '0원')}")
+            c4.metric("실현손익", ov.get('total_net_pnl', '0원'))
 
             g_key = saved_creds["gemini_api_key"]
             if g_key:
