@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+import numpy as np
 from functools import lru_cache
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -16,11 +17,11 @@ def clean_num(val) -> float:
 
 class NaverStockScreener:
     STRATEGIES = {
-        "A": {"name": "전략 A. 메이저 수급 주도주", "badge": "💎 수급주도", "desc": "시총 1000억↑ & 거래대금 1000억↑ & +14.5% 이상 장대양봉"},
+        "A": {"name": "전략 A. 메이저 수급 주도주", "badge": "💎 수급주도", "desc": "시총 1000억↑ & 거래대금 300억↑ & +14.5% 이상 장대양봉"},
         "B": {"name": "전략 B. 10일선 급등 눌림목", "badge": "🎯 10일선눌림", "desc": "120일 대세 정배열(5>10>20>60>120) 추세 중 10일선 지지"},
         "C": {"name": "전략 C. 20일선 정석 눌림목", "badge": "🛡️ 20일선눌림", "desc": "120일 대세 정배열(5>10>20>60>120) 추세 중 20일선 지지"},
-        "D": {"name": "전략 D. 52주/역사적 신고가 돌파", "badge": "🚀 신고가돌파", "desc": "시총 1000억↑ & 거래대금 1000억↑ & 52주 최고 종가 돌파"},
-        "E": {"name": "전략 E. 바닥 턴어라운드", "badge": "🌱 바닥턴", "desc": "시총 1000억↑ & 거래대금 1000억↑ & 20일선 첫 상향 돌파"}
+        "D": {"name": "전략 D. 52주/역사적 신고가 돌파", "badge": "🚀 신고가돌파", "desc": "시총 1000억↑ & 거래대금 300억↑ & 52주 최고 종가 돌파"},
+        "E": {"name": "전략 E. 바닥 턴어라운드", "badge": "🌱 바닥턴", "desc": "시총 1000억↑ & 거래대금 300억↑ & 20일선 첫 상향 돌파"}
     }
 
     SECTOR_PALETTE = {
@@ -313,13 +314,13 @@ class NaverStockScreener:
         return {"valid": False}
 
     # =========================================================================
-    # 🎯 4. 당일 거래대금 1,000억↑ & 시총 1,000억↑ 실시간 주도주 스크리닝
+    # 🎯 4. 당일 거래대금 300억↑ & 시총 1,000억↑ 실시간 주도주 스크리닝 (완화 & 고속화)
     # =========================================================================
     @classmethod
     def get_market_ranking(cls, sosok: int = 0) -> list:
         headers = {"User-Agent": "Mozilla/5.0"}
         market_name = "코스피" if sosok == 0 else "코스닥"
-        stocks = []
+        candidates = []
 
         url = f"https://finance.naver.com/sise/sise_quant.naver?sosok={sosok}"
         try:
@@ -344,59 +345,79 @@ class NaverStockScreener:
                 trading_val_백만 = clean_num(tds[6].text)
                 trading_val_억 = round(trading_val_백만 / 100, 1)
 
-                if trading_val_억 < 1000.0:
+                # 💡 거래대금 기준 1,000억 -> 300억 완화 적용
+                if trading_val_억 < 300.0:
                     continue
 
-                market_cap_억 = cls.fetch_market_cap(code)
-                if market_cap_억 < 1000.0:
-                    continue
-
-                matched = []
-                cs = cls.fetch_recent_candles_summary(code)
-
-                if cs["valid"]:
-                    curr_c = cs["curr_close"]
-                    curr_l = cs["curr_low"]
-                    ma10 = cs["ma10"]
-                    ma20 = cs["ma20"]
-                    prev_c = cs["prev_close"]
-                    is_uptrend = cs["is_true_uptrend"]
-                    is_clean = cs["is_clean_candle"]
-
-                    if change_rate >= 14.5 and curr_c > cs["curr_open"]:
-                        matched.append("A")
-
-                    if is_uptrend and is_clean and prev_c >= ma10:
-                        if curr_l <= ma10 * 1.01 and curr_c >= ma10 * 0.985:
-                            matched.append("B")
-
-                    if is_uptrend and is_clean and prev_c >= ma20:
-                        if curr_l <= ma20 * 1.015 and curr_c >= ma20 * 0.98:
-                            matched.append("C")
-
-                    if curr_c > cs["prev_52w_high_close"] and change_rate >= 2.0 and curr_c > cs["curr_open"]:
-                        matched.append("D")
-
-                    if prev_c <= ma20 and curr_c > ma20 and change_rate >= 3.0:
-                        matched.append("E")
-                else:
-                    if change_rate >= 14.5:
-                        matched.append("A")
-                    elif change_rate >= 5.0:
-                        matched.append("E")
-
-                if matched:
-                    score = round(trading_val_억 * (1 + (change_rate / 100)) * (1 + (len(matched) - 1) * 0.5), 1)
-                    sec_info = cls.classify_sector(code, name)
-                    stocks.append({
-                        "시장": market_name, "종목코드": code, "종목명": name,
-                        "섹터정보": sec_info, "현재가": curr_p, "등락률(%)": change_rate,
-                        "거래대금(억원)": trading_val_억, "시가총액(억원)": int(market_cap_억),
-                        "매칭전략": matched, "전략수": len(matched), "모멘텀점수": score
-                    })
+                candidates.append({
+                    "market_name": market_name,
+                    "code": code,
+                    "name": name,
+                    "curr_p": curr_p,
+                    "change_rate": change_rate,
+                    "trading_val_억": trading_val_억
+                })
         except Exception as e:
-            print(f"[{market_name}] 파싱 오류: {e}")
-        return stocks
+            print(f"[{market_name}] 거래량 순위 파싱 오류: {e}")
+            return []
+
+        def process_candidate(item):
+            code = item["code"]
+            name = item["name"]
+            market_cap_억 = cls.fetch_market_cap(code)
+            if market_cap_억 < 1000.0:
+                return None
+
+            matched = []
+            cs = cls.fetch_recent_candles_summary(code)
+            change_rate = item["change_rate"]
+
+            if cs.get("valid"):
+                curr_c = cs["curr_close"]
+                curr_l = cs["curr_low"]
+                ma10 = cs["ma10"]
+                ma20 = cs["ma20"]
+                prev_c = cs["prev_close"]
+                is_uptrend = cs["is_true_uptrend"]
+                is_clean = cs["is_clean_candle"]
+
+                if change_rate >= 14.5 and curr_c > cs["curr_open"]:
+                    matched.append("A")
+
+                if is_uptrend and is_clean and prev_c >= ma10:
+                    if curr_l <= ma10 * 1.01 and curr_c >= ma10 * 0.985:
+                        matched.append("B")
+
+                if is_uptrend and is_clean and prev_c >= ma20:
+                    if curr_l <= ma20 * 1.015 and curr_c >= ma20 * 0.98:
+                        matched.append("C")
+
+                if curr_c > cs["prev_52w_high_close"] and change_rate >= 2.0 and curr_c > cs["curr_open"]:
+                    matched.append("D")
+
+                if prev_c <= ma20 and curr_c > ma20 and change_rate >= 3.0:
+                    matched.append("E")
+            else:
+                if change_rate >= 14.5:
+                    matched.append("A")
+                elif change_rate >= 5.0:
+                    matched.append("E")
+
+            if matched:
+                score = round(item["trading_val_억"] * (1 + (change_rate / 100)) * (1 + (len(matched) - 1) * 0.5), 1)
+                sec_info = cls.classify_sector(code, name)
+                return {
+                    "시장": item["market_name"], "종목코드": code, "종목명": name,
+                    "섹터정보": sec_info, "현재가": item["curr_p"], "등락률(%)": change_rate,
+                    "거래대금(억원)": item["trading_val_억"], "시가총액(억원)": int(market_cap_억),
+                    "매칭전략": matched, "전략수": len(matched), "모멘텀점수": score
+                }
+            return None
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            results = list(executor.map(process_candidate, candidates))
+
+        return [r for r in results if r is not None]
 
     @classmethod
     def run_multi_strategy_screen(cls) -> tuple:
@@ -410,26 +431,15 @@ class NaverStockScreener:
         return themes, df
 
     # =========================================================================
-    # 👑 5. 코스피/코스닥 전 종목 업종 전수조사 & 정배열 최다 집중 섹터 엔진
-    # =========================================================================
-    # =========================================================================
-    # 👑 5. 코스피/코스닥 전 종목 업종 전수조사 & 정배열 최다 집중 섹터 엔진 (왜곡 방지)
-    # =========================================================================
-    # =========================================================================
-    # 👑 5. 시장 260개 전 테마 전수조사 & 정배열 주도 섹터 랭킹 엔진
+    # 👑 5. 시장 전 테마 전수조사 & 정배열 주도 섹터 랭킹 엔진
     # =========================================================================
     @classmethod
     def get_sector_uptrend_summary(cls) -> list:
-        """
-        네이버 테마 전체를 스캔하여 
-        화장품, 반도체, 조선, 방산 등 실제 주도 테마 중 정배열 종목이 가장 많은 1등 섹터 도출
-        """
         url = "https://finance.naver.com/sise/theme.naver?&page=1"
         headers = {"User-Agent": "Mozilla/5.0"}
         themes_to_scan = []
 
         try:
-            # 상위 1~3페이지(총 60~90개 핵심 테마) 전수 수집
             for p in range(1, 4):
                 p_url = f"https://finance.naver.com/sise/theme.naver?&page={p}"
                 res = requests.get(p_url, headers=headers, timeout=4)
@@ -475,7 +485,6 @@ class NaverStockScreener:
             uptrend_stocks = []
             valid_count = 0
 
-            # 테마 내 종목들 정배열 검사 (시총 1000억 이상 유효 종목)
             for st in member_stocks[:20]:
                 code = st["code"]
                 mcap = cls.fetch_market_cap(code)
@@ -504,7 +513,6 @@ class NaverStockScreener:
                 }
             return None
 
-        from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=8) as executor:
             scanned = list(executor.map(analyze_single_theme, themes_to_scan[:40]))
 
@@ -541,7 +549,7 @@ class NaverStockScreener:
         msg += "🔥 *NXT/장전 거래 주도 테마 TOP 3*\n"
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 대장: `{t['leader']}`\n"
-        msg += "\n⭐ *오늘의 메이저 골든픽 TOP 3 (시총·거래대금 1000억↑)*\n"
+        msg += "\n⭐ *오늘의 메이저 골든픽 TOP 3 (시총 1000억↑ & 거래대금 300억↑)*\n"
         golden = df[df['전략수'] >= 2].head(3)
         if not golden.empty:
             for _, r in golden.iterrows():
@@ -549,7 +557,7 @@ class NaverStockScreener:
                 msg += f"• *{r['종목명']}* (`{r['종목코드']}`) {sec['emoji']} {sec['category']}\n"
                 msg += f"  현재가: `{r['현재가']:,}원` (+{r['등락률(%)']}%) | 거래대금: `{r['거래대금(억원)']:,}억` | 시총: `{r['시가총액(억원)']:,}억`\n"
         else:
-            msg += "• 거래대금 1000억 이상 강력 수급 유입 종목 탐색 중\n"
+            msg += "• 거래대금 300억 이상 강력 수급 유입 종목 탐색 중\n"
         msg += f"\n🎯 *오늘의 행동 강령*: {regime['desc']}"
         return msg
 
@@ -558,14 +566,14 @@ class NaverStockScreener:
         themes, df = cls.run_multi_strategy_screen()
         total_money = int(df['거래대금(억원)'].sum()) if not df.empty else 0
         msg = f"⚡ *[{time_label} 실시간 주도섹터 & 자금 쏠림 브리핑]*\n"
-        msg += f"📊 1000억 이상 주도주 자금 집중 규모: *약 {total_money:,}억 원*\n\n"
+        msg += f"📊 300억 이상 주도주 자금 집중 규모: *약 {total_money:,}억 원*\n\n"
         
         msg += "👑 *실시간 1등 주도 테마 & 대장주 현황*\n"
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* *(+{t['change_rate']}%)*\n"
             msg += f"   └ 1등 대장주: `{t['leader']}` (수급 집중 분출)\n"
             
-        msg += "\n💎 *오전장 거래대금 1000억↑ TOP 3 주도주*\n"
+        msg += "\n💎 *오전장 거래대금 300억↑ TOP 3 주도주*\n"
         top3 = df.head(3)
         if not top3.empty:
             for idx, (_, r) in enumerate(top3.iterrows()):
