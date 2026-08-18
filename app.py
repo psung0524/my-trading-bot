@@ -45,7 +45,7 @@ st.markdown("""
     .block-container {
         max-width: 600px !important;
         margin: 0 auto !important;
-        padding-top: 56px !important;
+        padding-top: 54px !important;
         padding-bottom: 3.5rem !important;
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
@@ -100,8 +100,8 @@ st.markdown("""
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 16px;
-        padding: 14px 16px;
-        margin-bottom: 10px;
+        padding: 12px 14px;
+        margin-bottom: 8px;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
     }
     
@@ -109,8 +109,8 @@ st.markdown("""
         background: #fffdf5;
         border: 1.5px solid #f59e0b;
         border-radius: 16px;
-        padding: 14px 16px;
-        margin-bottom: 10px;
+        padding: 12px 14px;
+        margin-bottom: 8px;
         box-shadow: 0 3px 8px rgba(245, 158, 11, 0.06);
     }
 
@@ -125,12 +125,13 @@ st.markdown("""
     }
 
     .stButton button {
-        border-radius: 12px !important;
+        border-radius: 10px !important;
         font-weight: 700 !important;
-        font-size: 0.88rem !important;
+        font-size: 0.8rem !important;
         border: 1px solid #e2e8f0 !important;
         background-color: #ffffff !important;
         color: #1e293b !important;
+        padding: 0.35rem 0.5rem !important;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
     }
     
@@ -176,7 +177,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 헬퍼 함수 & 100% 확실한 로컬 인메모리 검색 엔진
+# 3. 헬퍼 함수 & 검색/시세 엔진
 # -------------------------------------------------------------
 def load_saved_credentials():
     creds = {
@@ -219,11 +220,10 @@ def save_watchlist(watchlist):
 
 @st.cache_data(ttl=86400)
 def load_all_krx_stocks():
-    """네이버 시세 테이블을 직접 긁어 코스피/코스닥 전 종목 마스터 생성 (해외 차단 0%)"""
     stocks = []
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     
-    for sosok in [0, 1]:  # 0: 코스피, 1: 코스닥
+    for sosok in [0, 1]:
         for page in range(1, 15):
             try:
                 url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
@@ -261,12 +261,10 @@ def load_all_krx_stocks():
     return final_list
 
 def search_stock_by_name(keyword: str):
-    """로컬 인메모리 검색 (해외 서버 차단 무관 100% 매칭)"""
     if not keyword or len(keyword.strip()) == 0:
         return []
     
     kw = keyword.strip().lower()
-    
     if kw.isdigit() and len(kw) == 6:
         return [{"name": f"종목코드({kw})", "code": kw}]
         
@@ -330,18 +328,18 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
 
     st.markdown(f"""
     <div class='{card_class}'>
-        <div style='display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;'>
+        <div style='display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;'>
             <div>
-                {golden_badge}<strong style='font-size:1.1rem; color:#0f172a;'>{row['종목명']}</strong> <small style='color:#64748b;'>{row['종목코드']}</small><br>
-                <div style='margin-top:3px;'>{theme_chip}</div>
+                {golden_badge}<strong style='font-size:1.05rem; color:#0f172a;'>{row['종목명']}</strong> <small style='color:#64748b;'>{row['종목코드']}</small><br>
+                <div style='margin-top:2px;'>{theme_chip}</div>
             </div>
             <div style='text-align:right;'>{strat_badges}</div>
         </div>
-        <div style='margin-top: 8px; font-size: 1.0rem; color:#0f172a;'>
+        <div style='margin-top: 6px; font-size: 0.95rem; color:#0f172a;'>
             <strong>{curr_p:,}원</strong> <span style='color:#dc2626; font-weight:800;'>+{row['등락률(%)']}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
         </div>
-        <div style='margin-top: 8px; padding: 8px 10px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; font-size: 0.8rem; color: #475569;'>
-            🛑 손절선: <strong style='color:#dc2626;'>{calc_stop:,}원 (-{default_stop_pct}%)</strong> &nbsp;|&nbsp; 
+        <div style='margin-top: 6px; padding: 6px 8px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; font-size: 0.78rem; color: #475569;'>
+            🛑 손절: <strong style='color:#dc2626;'>{calc_stop:,}원 (-{default_stop_pct}%)</strong> &nbsp;|&nbsp; 
             🎯 3R익절: <strong style='color:#16a34a;'>{calc_tp_3r:,}원 (+{take_profit_3r_pct}%)</strong>
         </div>
     </div>
@@ -427,22 +425,22 @@ kosdaq_color = "#dc2626" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.
 
 st.markdown(f"""
 <div class='toss-card'>
-    <div style='font-size:1.05rem; font-weight:800; color:#0f172a; margin-bottom:8px;'>
+    <div style='font-size:1.0rem; font-weight:800; color:#0f172a; margin-bottom:6px;'>
         {market_regime['badge']}
     </div>
-    <div style='display:flex; gap:8px; margin-bottom:8px;'>
-        <div style='flex:1; background:#f8fafc; border:1px solid #f1f5f9; border-radius:10px; padding:8px; text-align:center;'>
-            <div style='font-size:0.75rem; color:#64748b; font-weight:700;'>KOSPI 코스피</div>
-            <div style='font-size:1.15rem; font-weight:800; color:{kospi_color};'>{kospi_pt} <span style='font-size:0.8rem;'>({kospi_chg}%)</span></div>
+    <div style='display:flex; gap:6px; margin-bottom:6px;'>
+        <div style='flex:1; background:#f8fafc; border:1px solid #f1f5f9; border-radius:8px; padding:6px; text-align:center;'>
+            <div style='font-size:0.72rem; color:#64748b; font-weight:700;'>KOSPI 코스피</div>
+            <div style='font-size:1.1rem; font-weight:800; color:{kospi_color};'>{kospi_pt} <span style='font-size:0.75rem;'>({kospi_chg}%)</span></div>
         </div>
-        <div style='flex:1; background:#f8fafc; border:1px solid #f1f5f9; border-radius:10px; padding:8px; text-align:center;'>
-            <div style='font-size:0.75rem; color:#64748b; font-weight:700;'>KOSDAQ 코스닥</div>
-            <div style='font-size:1.15rem; font-weight:800; color:{kosdaq_color};'>{kosdaq_pt} <span style='font-size:0.8rem;'>({kosdaq_chg}%)</span></div>
+        <div style='flex:1; background:#f8fafc; border:1px solid #f1f5f9; border-radius:8px; padding:6px; text-align:center;'>
+            <div style='font-size:0.72rem; color:#64748b; font-weight:700;'>KOSDAQ 코스닥</div>
+            <div style='font-size:1.1rem; font-weight:800; color:{kosdaq_color};'>{kosdaq_pt} <span style='font-size:0.75rem;'>({kosdaq_chg}%)</span></div>
         </div>
     </div>
-    <div style='font-size:0.85rem; color:#334155; line-height:1.4;'>
+    <div style='font-size:0.82rem; color:#334155; line-height:1.35;'>
         💡 <b>가이드:</b> {market_regime['desc']}<br>
-        🎯 <b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:700; padding:2px 6px; border-radius:4px;'>{safe_alloc}</span>
+        🎯 <b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:700; padding:1px 5px; border-radius:4px;'>{safe_alloc}</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -471,18 +469,30 @@ if active_tab == "screener":
     all_df = st.session_state.get("multi_screener_df", pd.DataFrame())
 
     if top_themes:
-        st.markdown("**⚡ 실시간 급등 테마 TOP**")
+        st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#334155; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP</div>", unsafe_allow_html=True)
+        
+        # 2x2 컴팩트 그리드
+        t_row1_c1, t_row1_c2 = st.columns(2)
+        t_row2_c1, t_row2_c2 = st.columns(2)
+        grid_cols = [t_row1_c1, t_row1_c2, t_row2_c1, t_row2_c2]
+        
         for i, theme in enumerate(top_themes[:4]):
             t_name = theme['theme_name']
             is_active = st.session_state["selected_theme_filter"] == t_name
-            btn_style = "primary" if is_active else "secondary"
-            c_t1, c_t2 = st.columns([3, 1])
-            c_t1.markdown(f"**{t_name}** <span style='color:#dc2626; font-weight:bold;'>+{theme['change_rate']}%</span> (대장: {theme['leader']})", unsafe_allow_html=True)
-            if c_t2.button(f"{'해제' if is_active else '필터'}", key=f"theme_btn_{i}", use_container_width=True, type=btn_style):
-                st.session_state["selected_theme_filter"] = None if is_active else t_name
-                st.rerun()
+            btn_label = f"{'✅ ' if is_active else ''}{t_name} (+{theme['change_rate']}%)"
+            
+            with grid_cols[i]:
+                if st.button(
+                    btn_label, 
+                    key=f"theme_btn_{i}", 
+                    use_container_width=True, 
+                    type="primary" if is_active else "secondary",
+                    help=f"대장주: {theme['leader']}"
+                ):
+                    st.session_state["selected_theme_filter"] = None if is_active else t_name
+                    st.rerun()
 
-    st.divider()
+    st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
     active_theme = st.session_state.get("selected_theme_filter")
     if active_theme:
         target_theme_data = next((t for t in top_themes if t["theme_name"] == active_theme), None)
@@ -522,7 +532,7 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오 (100% 확실한 검색 & 5% 변동 알림)
+# TAB 2: 감시 포트폴리오
 # -------------------------------------------------------------
 elif active_tab == "monitor":
     st.markdown("#### 📡 실시간 감시 포트폴리오 & 5% 변동 알림")
@@ -531,9 +541,8 @@ elif active_tab == "monitor":
     tg_c = saved_creds["tg_chat_id"]
     notifier = TelegramNotifier(tg_t, tg_c) if (tg_t and tg_c) else None
 
-    # 🚀 스마트 종목명 검색 및 추가 카드
     st.markdown("<div style='font-size:0.95rem; font-weight:800; color:#0f172a; margin-bottom:6px;'>🔍 감시 종목 추가</div>", unsafe_allow_html=True)
-    search_kw = st.text_input("종목명 입력", placeholder="예: 삼성전자, 펩트론, 삼천당제약, 에코프로", label_visibility="collapsed")
+    search_kw = st.text_input("종목명 입력", placeholder="예: 삼성전자, 펩트론, 에코프로, 삼천당제약", label_visibility="collapsed")
     
     if search_kw:
         found_items = search_stock_by_name(search_kw)
@@ -634,15 +643,15 @@ elif active_tab == "monitor":
             <div class='toss-card'>
                 <div style='display:flex; justify-content:space-between; align-items:center;'>
                     <div>
-                        <strong style='font-size:1.1rem; color:#0f172a;'>{item['name']}</strong> <small style='color:#64748b;'>({code})</small>
+                        <strong style='font-size:1.05rem; color:#0f172a;'>{item['name']}</strong> <small style='color:#64748b;'>({code})</small>
                     </div>
                     <div>{status_badge}</div>
                 </div>
-                <div style='margin-top:6px; font-size:0.95rem; color:#334155;'>
+                <div style='margin-top:4px; font-size:0.95rem; color:#334155;'>
                     매수가 {buy_p:,}원 ➡️ <b>현재가 {curr_p:,}원</b> 
                     (<span style='font-weight:800; color:{'#dc2626' if pnl_pct>0 else '#2563eb'};'>{pnl_pct:+0.2f}%</span>)
                 </div>
-                <div style='margin-top:8px; padding: 6px 10px; background: #f8fafc; border-radius: 8px; font-size:0.8rem; color:#64748b;'>
+                <div style='margin-top:6px; padding: 6px 10px; background: #f8fafc; border-radius: 8px; font-size:0.8rem; color:#64748b;'>
                     🛑 손절: <b style='color:#dc2626;'>{stop_p:,}원</b> &nbsp;|&nbsp; 🎯 3R익절: <b style='color:#16a34a;'>{tp_p:,}원</b>
                 </div>
             </div>
