@@ -29,10 +29,10 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* 하단 고정 바가 본문 콘텐츠를 가리지 않도록 하단 여백 대폭 확보 */
+    /* 하단 고정 바가 본문 콘텐츠를 가리지 않도록 하단 여백 확보 */
     .block-container {
         padding-top: 0.6rem !important;
-        padding-bottom: 6rem !important;
+        padding-bottom: 95px !important;
         padding-left: 0.6rem !important;
         padding-right: 0.6rem !important;
     }
@@ -53,25 +53,31 @@ st.markdown("""
         margin-bottom: 2px;
     }
     
-    /* 🚀 진짜 화면 최하단 고정 플로팅 바 CSS (Streamlit 컨테이너 완벽 타겟팅) */
+    /* 🚀 하단 플로팅 네비게이션 바 완벽 고정 스타일 (모든 버전 호환) */
+    div[data-testid="stBottom"],
+    footer,
+    .stApp > div:has(div[data-testid="stBottomBlockContainer"]),
     div[data-testid="stBottomBlockContainer"] {
-        background-color: #ffffff !important;
-        border-top: 1px solid #e2e8f0 !important;
-        padding: 6px 4px 8px 4px !important;
-        box-shadow: 0 -3px 12px rgba(0,0,0,0.08) !important;
         position: fixed !important;
         bottom: 0 !important;
         left: 0 !important;
         right: 0 !important;
-        z-index: 999999 !important;
+        width: 100vw !important;
+        background-color: #ffffff !important;
+        border-top: 1.5px solid #e2e8f0 !important;
+        padding: 6px 6px 10px 6px !important;
+        z-index: 9999999 !important;
+        box-shadow: 0 -4px 15px rgba(0,0,0,0.1) !important;
+        margin: 0 !important;
     }
     
-    /* 하단 버튼 앱 스타일링 */
-    div[data-testid="stBottomBlockContainer"] button {
+    /* 하단 버튼 앱 전용 스타일 */
+    div[data-testid="stBottomBlockContainer"] button,
+    div[data-testid="stBottom"] button {
         height: 48px !important;
         padding: 2px 0px !important;
         line-height: 1.2 !important;
-        font-size: 0.75rem !important;
+        font-size: 0.72rem !important;
         font-weight: 700 !important;
         border-radius: 8px !important;
     }
@@ -580,28 +586,32 @@ elif active_tab == "report":
             st.error(f"엑셀 분석 중 오류: {str(e)}")
 
 # -------------------------------------------------------------
-# 6. Streamlit 공식 하단 고정 컨테이너 (Floating Bottom Bar)
+# 6. Streamlit 공식 st.bottom() 컨테이너로 완전 고정
 # -------------------------------------------------------------
-with st.container():
-    # Streamlit Cloud의 bottom 컨테이너를 완벽 타겟팅
+try:
+    bottom_nav = st.bottom()
+except AttributeError:
+    bottom_nav = st.container()
+
+with bottom_nav:
     b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
     with b_col1:
-        if st.button("🎯 스크리너", key="nav_btn_screener", use_container_width=True, type="primary" if active_tab=="screener" else "secondary"):
+        if st.button("🎯\n스크리너", key="nav_btn_screener", use_container_width=True, type="primary" if active_tab=="screener" else "secondary"):
             st.session_state["active_nav_tab"] = "screener"
             st.rerun()
     with b_col2:
-        if st.button("📡 포트", key="nav_btn_monitor", use_container_width=True, type="primary" if active_tab=="monitor" else "secondary"):
+        if st.button("📡\n포트", key="nav_btn_monitor", use_container_width=True, type="primary" if active_tab=="monitor" else "secondary"):
             st.session_state["active_nav_tab"] = "monitor"
             st.rerun()
     with b_col3:
-        if st.button("🔬 백테스트", key="nav_btn_backtest", use_container_width=True, type="primary" if active_tab=="backtest" else "secondary"):
+        if st.button("🔬\n백테스트", key="nav_btn_backtest", use_container_width=True, type="primary" if active_tab=="backtest" else "secondary"):
             st.session_state["active_nav_tab"] = "backtest"
             st.rerun()
     with b_col4:
-        if st.button("📢 브리핑", key="nav_btn_briefing", use_container_width=True, type="primary" if active_tab=="briefing" else "secondary"):
+        if st.button("📢\n브리핑", key="nav_btn_briefing", use_container_width=True, type="primary" if active_tab=="briefing" else "secondary"):
             st.session_state["active_nav_tab"] = "briefing"
             st.rerun()
     with b_col5:
-        if st.button("🧠 복기", key="nav_btn_report", use_container_width=True, type="primary" if active_tab=="report" else "secondary"):
+        if st.button("🧠\n복기", key="nav_btn_report", use_container_width=True, type="primary" if active_tab=="report" else "secondary"):
             st.session_state["active_nav_tab"] = "report"
             st.rerun()
