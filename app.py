@@ -276,7 +276,7 @@ def save_watchlist(user_id: str, watchlist):
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
 # -------------------------------------------------------------
-# 4. 🔥 [버그 완벽 수정] 정밀 실시간 테마 시세 파싱 엔진
+# 4. 🔥 [초고속 일괄 조회 엔진] 관심종목 한 번에 로딩
 # -------------------------------------------------------------
 @st.cache_data(ttl=180, show_spinner=False)
 def get_cached_screener_data():
@@ -306,47 +306,54 @@ def get_naver_theme_directory():
             break
     return theme_map
 
-def fetch_single_stock_info(code: str):
-    """단일 종목 실시간 현재가 / 등락률 / 거래대금 확실한 수집"""
+def fetch_batch_realtime_prices(codes: list) -> dict:
+    """여러 종목의 시세를 한 번의 API 호출로 초고속 일괄 조회 (일괄 팍 로딩)"""
+    if not codes:
+        return {}
+    
+    price_map = {}
+    try:
+        code_str = ",".join([str(c).zfill(6) for c in codes])
+        url = f"https://polling.finance.naver.com/api/realtime/domestic/stock/{code_str}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers, timeout=2.5)
+        if res.status_code == 200:
+            data = res.json()
+            if 'result' in data and 'areas' in data['result']:
+                for area in data['result']['areas']:
+                    for it in area.get('datas', []):
+                        c_code = str(it.get('cd', '')).zfill(6)
+                        nv = int(it.get('nv', 0))
+                        if nv > 0:
+                            price_map[c_code] = nv
+    except Exception:
+        pass
+    
+    # API 조회 실패한 종목이 있다면 단일 조회로 백업
+    for c in codes:
+        c_code = str(c).zfill(6)
+        if c_code not in price_map or price_map[c_code] == 0:
+            p = fetch_single_stock_price(c_code)
+            if p > 0:
+                price_map[c_code] = p
+                
+    return price_map
+
+def fetch_single_stock_price(code: str):
     try:
         url = f"https://finance.naver.com/item/main.naver?code={code}"
         headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=2.0)
+        res = requests.get(url, headers=headers, timeout=1.5)
         soup = BeautifulSoup(res.content.decode('cp949', errors='ignore'), 'html.parser')
-        
-        # 1. 현재가
         no_today = soup.select_one(".no_today .blind")
-        curr_p = int(no_today.text.replace(",", "").strip()) if no_today else 0
-        
-        # 2. 등락률
-        chg_tag = soup.select_one(".no_exday .blind")
-        rate_tag = soup.select(".no_exday .blind")
-        chg_rate = 0.0
-        if len(rate_tag) >= 2:
-            try:
-                chg_rate = float(rate_tag[1].text.replace("%", "").replace("+", "").strip())
-                if "하락" in soup.select_one(".no_exday").text or "파란색" in str(soup.select_one(".no_exday")):
-                    chg_rate = -abs(chg_rate)
-            except Exception:
-                pass
-                
-        # 3. 거래량 & 거래대금
-        vol = 0
-        d_trs = soup.select("table.type2 tr")
-        for dtr in d_trs:
-            if "거래량" in dtr.text:
-                v_blind = dtr.select_one(".blind")
-                if v_blind:
-                    vol = int(v_blind.text.replace(",", "").strip())
-                    break
-        amount_eok = round((curr_p * vol) / 100000000, 1)
-        return curr_p, chg_rate, amount_eok
+        if no_today:
+            return int(no_today.text.replace(",", "").strip())
     except Exception:
-        return 0, 0.0, 0.0
+        pass
+    return 0
 
 @st.cache_data(ttl=30, show_spinner=False)
 def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
-    """테마 전체 종목 수집 및 가격 100% 매핑 보장"""
     if not theme_no:
         t_dir = get_naver_theme_directory()
         theme_no = t_dir.get(theme_name, "")
@@ -366,20 +373,15 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
         res = requests.get(url, headers=headers, timeout=3.5)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
         
-        # 🎯 네이버 테마 상세 테이블의 tr과 직속 td.name, td.number 직접 파싱
         for row in soup.select("table.type_5 tr"):
             name_tag = row.select_one("td.name a")
             if not name_tag:
                 continue
-                
             name = name_tag.text.strip()
-            code = name_tag['href'].split('code=')[-1].strip()
+            code = str(name_tag['href'].split('code=')[-1].strip()).zfill(6)
             
-            # td.number 셀들만 정확히 추출 (0:현재가, 1:전일비, 2:등락률, 3:매수호가, 4:매도호가, 5:거래량, 6:거래대금)
             num_tds = row.select("td.number")
-            curr_p = 0
-            chg_rate = 0.0
-            amount_eok = 0.0
+            curr_p, chg_rate, amount_eok = 0, 0.0, 0.0
             
             if len(num_tds) >= 3:
                 try:
@@ -397,16 +399,12 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
                 except Exception:
                     pass
 
-            # 혹시라도 가격이 0원이면 단일 페이지에서 즉시 복구
             if curr_p == 0:
-                s_p, s_c, s_a = fetch_single_stock_info(code)
-                curr_p = s_p
-                chg_rate = s_c
-                amount_eok = s_a
+                curr_p = fetch_single_stock_price(code)
 
             stocks.append({
                 "종목명": name,
-                "종목코드": str(code).zfill(6),
+                "종목코드": code,
                 "현재가": curr_p,
                 "등락률(%)": chg_rate,
                 "거래대금(억원)": amount_eok,
@@ -423,7 +421,6 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
             })
     except Exception:
         pass
-        
     return stocks
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -472,19 +469,6 @@ def search_stock_by_name(keyword: str):
     matched = [s for s in master if kw in s['name'].lower() or kw in s['code']]
     matched.sort(key=lambda x: (not x['name'].lower().startswith(kw), len(x['name'])))
     return matched[:10]
-
-def fetch_realtime_price(code: str):
-    try:
-        url = f"https://finance.naver.com/item/main.naver?code={code}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=2)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        no_today = soup.select_one(".no_today .blind")
-        if no_today:
-            return int(no_today.text.replace(",", "").strip())
-    except Exception:
-        pass
-    return None
 
 def format_korean_money(amount_eok: float) -> str:
     if amount_eok >= 10000:
@@ -731,7 +715,7 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오
+# TAB 2: 감시 포트폴리오 (🔥 일괄 배치 조회로 팍 로딩 최적화)
 # -------------------------------------------------------------
 elif active_tab == "monitor":
     st.markdown(f"#### 📡 [{current_user}] 감시 포트폴리오 & 5% 변동 알림")
@@ -752,7 +736,7 @@ elif active_tab == "monitor":
                 format_func=lambda x: f"📌 {x['name']} ({x['code']})"
             )
             
-            real_p = fetch_realtime_price(sel_stock['code']) or 0
+            real_p = fetch_single_stock_price(sel_stock['code']) or 0
             c_in1, c_in2 = st.columns(2)
             with c_in1:
                 buy_price_in = st.number_input("매수가 (원)", value=real_p if real_p > 0 else 10000, step=500)
@@ -794,13 +778,17 @@ elif active_tab == "monitor":
     if not current_list:
         st.info(f"[{current_user}] 계정에 감시 중인 종목이 없습니다. 위에서 종목을 검색해 등록하세요.")
     else:
+        # 💡 [핵심 최적화] 관심종목 전체 코드를 추출해 한 번에 API 일괄 조회 (툭툭 로딩 방지)
+        all_codes = [item['code'] for item in current_list]
+        batch_prices = fetch_batch_realtime_prices(all_codes)
+
         updated = False
         for item in current_list:
             code = item['code']
             buy_p = item['buy_price']
             
-            real_p = fetch_realtime_price(code)
-            if real_p:
+            real_p = batch_prices.get(str(code).zfill(6), 0)
+            if real_p > 0:
                 item['current_price'] = real_p
                 item['pnl_pct'] = round(((real_p - buy_p) / buy_p) * 100, 2)
                 updated = True
