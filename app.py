@@ -33,10 +33,25 @@ active_tab = query_params.get("tab", "screener")
 
 st.markdown("""
 <style>
-    /* 하단 고정 바가 본문 콘텐츠를 가리지 않도록 넉넉한 하단 패딩 확보 */
+    /* 1. Streamlit 기본 하단 배지, 워터마크, Manage App 버튼 완전 숨김 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden !important; display: none !important;}
+    header {visibility: hidden !important;}
+    .viewerBadge_container__1QSob,
+    .viewerBadge_link__1S137,
+    [data-testid="stStatusWidget"],
+    [data-testid="stDecoration"],
+    [data-testid="manage-app-button"],
+    .stDeployButton,
+    div[class*="viewerBadge"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+
+    /* 2. 본문 여백 (하단 네비 바 확보) */
     .block-container {
         padding-top: 0.6rem !important;
-        padding-bottom: 90px !important;
+        padding-bottom: 85px !important;
         padding-left: 0.6rem !important;
         padding-right: 0.6rem !important;
     }
@@ -57,35 +72,35 @@ st.markdown("""
         margin-bottom: 2px;
     }
     
-    /* 🚀 실제 네이티브 증권 앱 스타일 100% 뷰포트 고정 플로팅 하단 바 */
+    /* 3. 🚀 최상단 우선순위(z-index)를 가진 고정 하단 바 */
     .mobile-app-bottom-bar {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        height: 64px;
-        background-color: #ffffff;
-        border-top: 1.5px solid #e2e8f0;
-        display: flex;
-        justify-content: space-around;
-        align-items: center;
-        z-index: 999999999;
-        box-shadow: 0 -3px 12px rgba(0,0,0,0.08);
-        padding-bottom: env(safe-area-inset-bottom, 5px);
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 60px !important;
+        background-color: #ffffff !important;
+        border-top: 1.5px solid #e2e8f0 !important;
+        display: flex !important;
+        justify-content: space-around !important;
+        align-items: center !important;
+        z-index: 2147483647 !important; /* 모든 요소보다 위에 배치 */
+        box-shadow: 0 -3px 12px rgba(0,0,0,0.08) !important;
+        padding-bottom: env(safe-area-inset-bottom, 5px) !important;
     }
     
     .mobile-app-tab-item {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
         text-decoration: none !important;
         color: #94a3b8 !important;
         font-size: 0.68rem !important;
         font-weight: 600 !important;
-        height: 100%;
-        transition: color 0.15s ease-in-out;
+        height: 100% !important;
+        -webkit-tap-highlight-color: transparent !important;
     }
     
     .mobile-app-tab-item.active {
