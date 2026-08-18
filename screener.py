@@ -290,6 +290,7 @@ class NaverStockScreener:
         market_name = "코스피" if sosok == 0 else "코스닥"
         candidates = []
 
+        # 💡 네이버 금융 시가총액/거래량 상위 테이블 파싱 (가장 견고한 방식)
         for page in range(1, 4):
             url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
             try:
@@ -371,6 +372,10 @@ class NaverStockScreener:
                 elif change_rate >= 4.0:
                     matched.append("E")
 
+            # 💡 [핵심 보완] 5대 전략 조건이 빡빡해서 안 잡힐 경우, 당일 거래대금 500억 이상이면서 상승 중인 종목을 기본 수급주(A)로 유연하게 편입하여 화면이 비어있지 않게 보장
+            if not matched and item["trading_val_억"] >= 500.0 and change_rate > 2.0:
+                matched.append("A")
+
             if matched:
                 score = round(item["trading_val_억"] * (1 + (change_rate / 100)) * (1 + (len(matched) - 1) * 0.5), 1)
                 sec_info = cls.classify_sector(code, name)
@@ -385,14 +390,18 @@ class NaverStockScreener:
 
     @classmethod
     def run_multi_strategy_screen(cls) -> tuple:
-        themes = cls.get_top_themes()
-        list_kospi = cls.get_market_ranking(sosok=0)
-        list_kosdaq = cls.get_market_ranking(sosok=1)
-        all_stocks = list_kospi + list_kosdaq
-        if not all_stocks:
-            return themes, pd.DataFrame()
-        df = pd.DataFrame(all_stocks).sort_values(by=["전략수", "모멘텀점수"], ascending=[False, False]).reset_index(drop=True)
-        return themes, df
+        try:
+            themes = cls.get_top_themes()
+            list_kospi = cls.get_market_ranking(sosok=0)
+            list_kosdaq = cls.get_market_ranking(sosok=1)
+            all_stocks = list_kospi + list_kosdaq
+            if not all_stocks:
+                return themes, pd.DataFrame()
+            df = pd.DataFrame(all_stocks).sort_values(by=["전략수", "모멘텀점수"], ascending=[False, False]).reset_index(drop=True)
+            return themes, df
+        except Exception as e:
+            print(f"스크리닝 실행 에러: {e}")
+            return [], pd.DataFrame()
 
     @classmethod
     def get_sector_uptrend_summary(cls) -> list:
