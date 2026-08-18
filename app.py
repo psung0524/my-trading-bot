@@ -24,26 +24,26 @@ OLD_WATCHLIST_FILE = Path(__file__).parent / "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. UI 설정 & 사용자 계정 자동 기억 (Local Storage)
+# 1. UI 설정 & 사이드바 복원 & 계정 자동 기억
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="auto"
 )
 
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
 
-# 1) URL 파라미터 기반 계정 확인
+# URL 파라미터 기반 계정 확인
 url_user = query_params.get("user", "").strip()
 if "current_user" not in st.session_state:
     st.session_state["current_user"] = url_user if url_user else "default"
 
 current_user = st.session_state["current_user"]
 
-# 2) 브라우저 로컬 저장소 자동 기억 스크립트
+# 브라우저 로컬 저장소 자동 기억 스크립트
 components.html(f"""
 <script>
     const currentParam = new URLSearchParams(window.parent.location.search).get("user");
@@ -75,13 +75,24 @@ st.markdown("""
     .block-container {
         max-width: 620px !important;
         margin: 0 auto !important;
-        padding-top: 54px !important;
+        padding-top: 58px !important;
         padding-bottom: 3.5rem !important;
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
     }
     
-    #MainMenu, footer, header {visibility: hidden !important; display: none !important;}
+    #MainMenu, footer {visibility: hidden !important; display: none !important;}
+    
+    /* 사이드바 토글 버튼 전면 표시 */
+    [data-testid="stSidebarCollapsedControl"] {
+        z-index: 1000000000 !important;
+        top: 8px !important;
+        left: 8px !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.08) !important;
+    }
     
     .mobile-app-top-bar {
         position: fixed !important;
@@ -207,7 +218,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 사용자별 설정 & 데이터 입출력 함수
+# 3. 사용자별 설정 & 파일 입출력 함수
 # -------------------------------------------------------------
 def get_user_config_file(user_id: str) -> Path:
     safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "default"
@@ -272,16 +283,26 @@ def save_watchlist(user_id: str, watchlist):
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
 # -------------------------------------------------------------
-# 4. 테마 수집 & 실시간 정밀 시세 엔진 (등락률/거래대금 완벽 파싱)
+# 4. ⚡ 스피드 최적화 캐싱 엔진 (3분 자동 캐시)
 # -------------------------------------------------------------
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=180, show_spinner=False)
+def get_cached_screener_data():
+    """초기 로딩 병목 해소: 5대 전략 퀀트 스캔 3분 캐싱"""
+    return NaverStockScreener.run_multi_strategy_screen()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_cached_market_regime():
+    """시장 레짐 데이터 캐싱"""
+    return NaverStockScreener.get_market_regime()
+
+@st.cache_data(ttl=600, show_spinner=False)
 def get_naver_theme_directory():
     theme_map = {}
     headers = {'User-Agent': 'Mozilla/5.0'}
     for page in range(1, 8):
         try:
             url = f"https://finance.naver.com/sise/theme.naver?&page={page}"
-            res = requests.get(url, headers=headers, timeout=3)
+            res = requests.get(url, headers=headers, timeout=2.5)
             soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
             rows = soup.select("table.type_1 td.col_type1 a")
             if not rows:
@@ -295,17 +316,14 @@ def get_naver_theme_directory():
     return theme_map
 
 def fetch_single_stock_realtime(code: str):
-    """종목코드 기반 네이버 모바일 실시간 상세 정보 파싱"""
     try:
         url = f"https://m.stock.naver.com/api/stock/{code}/basic"
         headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)'}
-        res = requests.get(url, headers=headers, timeout=2.5)
+        res = requests.get(url, headers=headers, timeout=2.0)
         if res.status_code == 200:
             data = res.json()
             curr_p = int(str(data.get('nowPrc', '0')).replace(',', ''))
             chg_rate = float(str(data.get('fluctuationRate', '0.0')).replace('%', '').replace('+', ''))
-            
-            # 거래대금 계산 (거래량 * 현재가 또는 제공 거래대금)
             vol = int(str(data.get('accQuant', '0')).replace(',', ''))
             amount_eok = round((curr_p * vol) / 100000000, 1)
             return curr_p, chg_rate, amount_eok
@@ -313,9 +331,8 @@ def fetch_single_stock_realtime(code: str):
         pass
     return None, None, None
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=30, show_spinner=False)
 def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
-    """테마 전체 종목 수집 및 실시간 시세/등락률/거래대금 매핑"""
     if not theme_no:
         t_dir = get_naver_theme_directory()
         theme_no = t_dir.get(theme_name, "")
@@ -332,7 +349,7 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
-        res = requests.get(url, headers=headers, timeout=4)
+        res = requests.get(url, headers=headers, timeout=3.0)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
         
         items = []
@@ -344,11 +361,8 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
             name = name_tag.text.strip()
             code = name_tag['href'].split('code=')[-1].strip()
             
-            # 1차로 HTML 테이블 데이터 파싱
             tds = row.select("td")
-            html_price = 0
-            html_chg = 0.0
-            html_vol = 0
+            html_price, html_chg, html_vol = 0, 0.0, 0
             if len(tds) >= 8:
                 try:
                     html_price = int(tds[1].text.strip().replace(",", ""))
@@ -362,12 +376,11 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
         if not items:
             return []
 
-        # 2차: 실시간 API 배치 파싱 시도
         code_list_str = ",".join([c for _, c, _, _, _ in items])
         api_url = f"https://polling.finance.naver.com/api/realtime/domestic/stock/{code_list_str}"
         stock_info_map = {}
         try:
-            api_res = requests.get(api_url, headers=headers, timeout=2.5)
+            api_res = requests.get(api_url, headers=headers, timeout=2.0)
             if api_res.status_code == 200:
                 api_data = api_res.json()
                 if 'result' in api_data and 'areas' in api_data['result']:
@@ -389,7 +402,6 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
             chg_rate = float(info.get('cr', 0.0)) if info.get('cr') is not None else h_c
             amount_eok = round(float(info.get('aa', 0)) / 100, 1) if info.get('aa', 0) > 0 else round((curr_p * h_v) / 100000000, 1)
 
-            # API와 HTML 파싱이 모두 실패했을 경우 단일 API 호출로 확실하게 복구
             if curr_p == 0:
                 s_p, s_c, s_a = fetch_single_stock_realtime(code)
                 if s_p:
@@ -409,7 +421,7 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
                 "섹터정보": {
                     "category": theme_name,
                     "raw_industry": theme_name,
-                    "emoji": "🚲" if "자전거" in theme_name else ("🌊" if "해운" in theme_name else "🔥"),
+                    "emoji": "🚲" if "자전거" in theme_name else ("🌊" if "해운" in theme_name else ("🕊️" if "남북" in theme_name else "🔥")),
                     "bg": "#e0f2fe" if "해운" in theme_name else "#fef3c7",
                     "color": "#0369a1" if "해운" in theme_name else "#b45309"
                 }
@@ -419,7 +431,7 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
         
     return stocks
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=86400, show_spinner=False)
 def load_all_krx_stocks():
     stocks = []
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -427,7 +439,7 @@ def load_all_krx_stocks():
         for page in range(1, 10):
             try:
                 url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
-                res = requests.get(url, headers=headers, timeout=2.5)
+                res = requests.get(url, headers=headers, timeout=2.0)
                 soup = BeautifulSoup(res.text, 'html.parser')
                 links = soup.select("a.tltle")
                 if not links:
@@ -571,7 +583,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
             st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 5. 사이드바 (사용자 전환 및 개별 설정)
+# 5. 사이드바 (사용자 계정 & 시스템 설정)
 # -------------------------------------------------------------
 saved_creds = load_user_credentials(current_user)
 
@@ -622,7 +634,7 @@ with st.sidebar:
 # -------------------------------------------------------------
 # 6. 시장 지수 대시보드
 # -------------------------------------------------------------
-market_regime = NaverStockScreener.get_market_regime()
+market_regime = get_cached_market_regime()
 safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
 
 kospi_pt = str(market_regime.get('kospi_close', '2,650.00'))
@@ -657,27 +669,26 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너
+# TAB 1: 퀀트 스크리너 (초고속 캐시 로딩 적용)
 # -------------------------------------------------------------
 if active_tab == "screener":
     st.markdown("#### 🔥 주도 테마 & 1,000억↑ 메이저 주도주")
     c_btn, c_slider = st.columns([1, 2])
     with c_btn:
-        run_scan = st.button("🔄 실시간 스캔", use_container_width=True)
+        run_scan = st.button("🔄 실시간 재스캔", use_container_width=True)
     with c_slider:
         default_stop_pct = st.slider("기본 손절선 (%)", min_value=2.0, max_value=12.0, value=6.0, step=0.5)
 
     if "selected_theme_filter" not in st.session_state:
         st.session_state["selected_theme_filter"] = None
 
-    if run_scan or "multi_screener_df" not in st.session_state:
-        with st.spinner("시총·거래대금 1000억↑ 5대 전략 퀀트 분석 중..."):
-            themes_data, df_result = NaverStockScreener.run_multi_strategy_screen()
-            st.session_state["top_themes"] = themes_data
-            st.session_state["multi_screener_df"] = df_result
+    if run_scan:
+        st.cache_data.clear()
+        st.rerun()
 
-    top_themes = st.session_state.get("top_themes", [])
-    all_df = st.session_state.get("multi_screener_df", pd.DataFrame())
+    # 초고속 캐시 로딩
+    themes_data, all_df = get_cached_screener_data()
+    top_themes = themes_data
 
     if top_themes:
         st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#334155; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP (클릭 시 전 종목 보기)</div>", unsafe_allow_html=True)
