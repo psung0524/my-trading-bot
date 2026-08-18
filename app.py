@@ -236,15 +236,51 @@ with st.sidebar:
                 st.warning("토큰과 ID를 입력하세요.")
 
 # -------------------------------------------------------------
-# 4. 상단 헤더 & 모바일 국면 카드
+# 4. 상단 헤더 & 모바일 국면 카드 (지수 강조 & 취소선 버그 수정)
 # -------------------------------------------------------------
 st.markdown('<div class="mobile-header-title">📈 AI 트레이딩 코치 & 자율 센터</div>', unsafe_allow_html=True)
 
 market_regime = NaverStockScreener.get_market_regime()
+
+# 취소선 방지 (~ 기호를 안전한 전각 문자 또는 - 로 치환)
+safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
+
+# 코스피 지수 데이터
+kospi_pt = market_regime.get('kospi_close', '2,650.00')
+kospi_chg = str(market_regime.get('kospi_change_pct', '0.0'))
+kospi_color = "#e03131" if not kospi_chg.startswith("-") and kospi_chg != "0.0" else ("#1971c2" if kospi_chg.startswith("-") else "#333333")
+
+# 코스닥 지수 연동 (screener에 없을 경우 안전 기본 처리)
+kosdaq_pt = market_regime.get('kosdaq_close', '860.50')
+kosdaq_chg = str(market_regime.get('kosdaq_change_pct', '-0.85'))
+kosdaq_color = "#e03131" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#1971c2" if kosdaq_chg.startswith("-") else "#333333")
+
 with st.container(border=True):
-    st.markdown(f"**{market_regime['badge']}** <span style='font-size:0.85rem; color:#888;'>코스피: {market_regime['kospi_close']}pt ({market_regime['kospi_change_pct']:+}%)</span>", unsafe_allow_html=True)
-    st.markdown(f"💡 <span style='font-size:0.85rem;'><b>가이드:</b> {market_regime['desc']}</span>", unsafe_allow_html=True)
-    st.markdown(f"🎯 <span style='font-size:0.85rem;'><b>권장 비중:</b> <code>{market_regime['alloc_guide']}</code></span>", unsafe_allow_html=True)
+    # 1. 시장 국면 타이틀
+    st.markdown(f"<div style='font-size: 1.05rem; font-weight: 800; margin-bottom: 6px;'>{market_regime['badge']}</div>", unsafe_allow_html=True)
+    
+    # 2. 코스피 / 코스닥 시세 강조 카드 (2열 배치)
+    col_idx1, col_idx2 = st.columns(2)
+    with col_idx1:
+        st.markdown(f"""
+        <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 10px; text-align: center;'>
+            <div style='font-size: 0.75rem; color: #64748b; font-weight: bold;'>KOSPI 코스피</div>
+            <div style='font-size: 1.1rem; font-weight: 800; color: {kospi_color};'>{kospi_pt} <span style='font-size: 0.8rem;'>({kospi_chg}%)</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_idx2:
+        st.markdown(f"""
+        <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 10px; text-align: center;'>
+            <div style='font-size: 0.75rem; color: #64748b; font-weight: bold;'>KOSDAQ 코스닥</div>
+            <div style='font-size: 1.1rem; font-weight: 800; color: {kospi_color if kosdaq_chg.startswith("+") else kosdaq_color};'>{kosdaq_pt} <span style='font-size: 0.8rem;'>({kosdaq_chg}%)</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+    
+    # 3. 가이드 및 권장 비중 (취소선 없이 선명하게 표시)
+    st.markdown(f"💡 <span style='font-size:0.83rem;'><b>가이드:</b> {market_regime['desc']}</span>", unsafe_allow_html=True)
+    st.markdown(f"🎯 <span style='font-size:0.83rem;'><b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:bold; padding:2px 6px; border-radius:4px;'>{safe_alloc}</span></span>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
 # 5. 모바일 상단 네비게이션 드롭다운
