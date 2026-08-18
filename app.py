@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import requests
+from bs4 import BeautifulSoup
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
@@ -18,7 +20,7 @@ WATCHLIST_FILE = "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. 모바일 앱 전용 상단 고정 탭 바 설정 및 CSS
+# 1. 페이지 기본 설정 및 세션 상태 초기화
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
@@ -27,67 +29,83 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 쿼리 파라미터를 통한 탭 상태 제어
+if "dark_mode" not in st.session_state:
+    st.session_state["dark_mode"] = True  # 기본 다크모드
+
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
 
-st.markdown("""
+# -------------------------------------------------------------
+# 2. 다크/라이트 테마 CSS 동적 주입
+# -------------------------------------------------------------
+is_dark = st.session_state["dark_mode"]
+
+bg_color = "#0e1117" if is_dark else "#ffffff"
+card_bg = "#1e222d" if is_dark else "#f8fafc"
+card_border = "#2e3440" if is_dark else "#e2e8f0"
+text_color = "#f8fafc" if is_dark else "#0f172a"
+subtext_color = "#94a3b8" if is_dark else "#64748b"
+nav_bg = "#161b22" if is_dark else "#ffffff"
+
+st.markdown(f"""
 <style>
-    /* 상단 고정 바 공간 확보 (상단 패딩 65px) */
-    .block-container {
-        padding-top: 65px !important;
+    /* 전체 배경 및 텍스트 */
+    .stApp {{
+        background-color: {bg_color} !important;
+        color: {text_color} !important;
+    }}
+    .block-container {{
+        padding-top: 60px !important;
         padding-bottom: 2rem !important;
         padding-left: 0.6rem !important;
         padding-right: 0.6rem !important;
-    }
+    }}
     
-    #MainMenu {visibility: hidden !important;}
-    footer {visibility: hidden !important;}
-    header {visibility: hidden !important;}
-
-    /* 🚀 모바일 상단 완벽 고정 앱 바 (하단 배지와 완전 분리) */
-    .mobile-app-top-bar {
+    #MainMenu, footer, header {{visibility: hidden !important; display: none !important;}}
+    
+    /* 모바일 상단 고정 바 */
+    .mobile-app-top-bar {{
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         width: 100vw !important;
-        height: 52px !important;
-        background-color: #ffffff !important;
-        border-bottom: 1.5px solid #e2e8f0 !important;
+        height: 50px !important;
+        background-color: {nav_bg} !important;
+        border-bottom: 1px solid {card_border} !important;
         display: flex !important;
         justify-content: space-around !important;
         align-items: center !important;
         z-index: 999999999 !important;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.06) !important;
-    }
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2) !important;
+    }}
     
-    .mobile-app-tab-item {
+    .mobile-app-tab-item {{
         flex: 1 !important;
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
         text-decoration: none !important;
-        color: #64748b !important;
+        color: {subtext_color} !important;
         font-size: 0.68rem !important;
         font-weight: 600 !important;
         height: 100% !important;
         border-bottom: 2.5px solid transparent !important;
         -webkit-tap-highlight-color: transparent !important;
-    }
+    }}
     
-    .mobile-app-tab-item.active {
+    .mobile-app-tab-item.active {{
         color: #ff4b4b !important;
         font-weight: 800 !important;
         border-bottom: 2.5px solid #ff4b4b !important;
-    }
+    }}
     
-    .mobile-app-tab-icon {
+    .mobile-app-tab-icon {{
         font-size: 1.05rem;
         margin-bottom: 1px;
-    }
+    }}
     
-    .badge-span {
+    .badge-span {{
         display: inline-block;
         padding: 2px 6px;
         border-radius: 4px;
@@ -95,12 +113,12 @@ st.markdown("""
         font-weight: bold;
         margin-right: 3px;
         margin-bottom: 2px;
-    }
+    }}
 </style>
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 2. 상단 고정 네비게이션 바 렌더링
+# 3. 상단 고정 네비게이션 바
 # -------------------------------------------------------------
 st.markdown(f"""
 <div class="mobile-app-top-bar">
@@ -128,7 +146,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 헬퍼 함수 및 설정 로드
+# 4. 헬퍼 함수 및 실시간 시세 연동
 # -------------------------------------------------------------
 def load_saved_credentials():
     creds = {
@@ -169,6 +187,20 @@ def save_watchlist(watchlist):
     with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
+def fetch_realtime_price(code: str):
+    """네이버 증권 실시간 현재가 수집"""
+    try:
+        url = f"https://finance.naver.com/item/main.naver?code={code}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        res = requests.get(url, headers=headers, timeout=3)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        no_today = soup.select_one(".no_today .blind")
+        if no_today:
+            return int(no_today.text.replace(",", "").strip())
+    except Exception:
+        pass
+    return None
+
 def format_korean_money(amount_eok: float) -> str:
     if amount_eok >= 10000:
         jo = int(amount_eok // 10000)
@@ -192,7 +224,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
     formatted_money = format_korean_money(row['거래대금(억원)'])
     is_golden = row['전략수'] >= 2
 
-    border_style = "border: 1.5px solid #f59f00; background-color: rgba(245, 159, 0, 0.03);" if is_golden else "border: 1px solid rgba(128, 128, 128, 0.2);"
+    border_style = f"border: 1.5px solid #f59f00; background-color: {'rgba(245, 159, 0, 0.08)' if is_dark else 'rgba(245, 159, 0, 0.03)'};" if is_golden else f"border: 1px solid {card_border}; background-color: {card_bg};"
     golden_badge = f"<span class='badge-span' style='background-color:#f59f00; color:#000;'>🔥 {row['전략수']}개 다중일치</span> " if is_golden else ""
 
     strat_badges = ""
@@ -222,7 +254,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
         <div style='margin-top: 4px; font-size: 13px;'>
             <strong>{curr_p:,}원</strong> <span style='color:#e03131; font-weight:bold;'>+{row['등락률(%)']}%</span> &nbsp;|&nbsp; 대금 <strong>{formatted_money}</strong>
         </div>
-        <div style='margin-top: 4px; font-size: 11.5px; color: #888;'>
+        <div style='margin-top: 4px; font-size: 11.5px; color: {subtext_color};'>
             🛑 손절: <strong style='color:#ff8787;'>{calc_stop:,}원 (-{default_stop_pct}%)</strong> &nbsp;|&nbsp; 
             🎯 3R: <strong style='color:#69db7c;'>{calc_tp_3r:,}원 (+{take_profit_3r_pct}%)</strong>
         </div>
@@ -248,19 +280,27 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
                 "stop_pct": -default_stop_pct,
                 "tp_price": calc_tp_3r,
                 "tp_pct": take_profit_3r_pct,
+                "last_notified_tier": 0,
                 "theme": f"{sec_emoji} {sec_cat}",
                 "strategy": ",".join(row['매칭전략']),
                 "added_at": datetime.now().strftime("%Y-%m-%d %H:%M")
             })
             save_watchlist(current_list)
-            st.toast(f"✅ [{row['종목명']}] 감시 등록 완료!")
+            st.toast(f"✅ [{row['종목명']}] 감시 등록 완료! (5% 변동 시 텔레그램 자동 알림)")
 
 # -------------------------------------------------------------
-# 4. 사이드바 (시스템 설정)
+# 5. 사이드바 (다크모드 On/Off & 시스템 설정)
 # -------------------------------------------------------------
 saved_creds = load_saved_credentials()
 
 with st.sidebar:
+    st.header("🎨 테마 설정")
+    dark_toggle = st.toggle("🌙 다크 모드 (Dark Mode)", value=st.session_state["dark_mode"])
+    if dark_toggle != st.session_state["dark_mode"]:
+        st.session_state["dark_mode"] = dark_toggle
+        st.rerun()
+
+    st.divider()
     st.header("⚙️ 시스템 설정")
     api_key = st.text_input("Gemini API Key", type="password", value=saved_creds["gemini_api_key"])
     
@@ -293,18 +333,18 @@ with st.sidebar:
                 st.warning("토큰과 ID를 입력하세요.")
 
 # -------------------------------------------------------------
-# 5. 시장 지수 및 전략 가이드 카드
+# 6. 시장 지수 대시보드 카드
 # -------------------------------------------------------------
 market_regime = NaverStockScreener.get_market_regime()
 safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
 
 kospi_pt = str(market_regime.get('kospi_close', '2,650.00'))
 kospi_chg = str(market_regime.get('kospi_change_pct', '0.0'))
-kospi_color = "#e03131" if not kospi_chg.startswith("-") and kospi_chg != "0.0" else ("#1971c2" if kospi_chg.startswith("-") else "#333333")
+kospi_color = "#e03131" if not kospi_chg.startswith("-") and kospi_chg != "0.0" else ("#1971c2" if kospi_chg.startswith("-") else "#888888")
 
 kosdaq_pt = str(market_regime.get('kosdaq_close', '860.50'))
 kosdaq_chg = str(market_regime.get('kosdaq_change_pct', '-0.85'))
-kosdaq_color = "#e03131" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#1971c2" if kosdaq_chg.startswith("-") else "#333333")
+kosdaq_color = "#e03131" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#1971c2" if kosdaq_chg.startswith("-") else "#888888")
 
 with st.container(border=True):
     st.markdown(f"<div style='font-size: 1.0rem; font-weight: 800; margin-bottom: 5px;'>{market_regime['badge']}</div>", unsafe_allow_html=True)
@@ -312,22 +352,22 @@ with st.container(border=True):
     col_idx1, col_idx2 = st.columns(2)
     with col_idx1:
         st.markdown(f"""
-        <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 5px 8px; text-align: center;'>
-            <div style='font-size: 0.72rem; color: #64748b; font-weight: bold;'>KOSPI 코스피</div>
+        <div style='background: {card_bg}; border: 1px solid {card_border}; border-radius: 8px; padding: 5px 8px; text-align: center;'>
+            <div style='font-size: 0.72rem; color: {subtext_color}; font-weight: bold;'>KOSPI 코스피</div>
             <div style='font-size: 1.05rem; font-weight: 800; color: {kospi_color};'>{kospi_pt} <span style='font-size: 0.78rem;'>({kospi_chg}%)</span></div>
         </div>
         """, unsafe_allow_html=True)
     with col_idx2:
         st.markdown(f"""
-        <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 5px 8px; text-align: center;'>
-            <div style='font-size: 0.72rem; color: #64748b; font-weight: bold;'>KOSDAQ 코스닥</div>
+        <div style='background: {card_bg}; border: 1px solid {card_border}; border-radius: 8px; padding: 5px 8px; text-align: center;'>
+            <div style='font-size: 0.72rem; color: {subtext_color}; font-weight: bold;'>KOSDAQ 코스닥</div>
             <div style='font-size: 1.05rem; font-weight: 800; color: {kosdaq_color};'>{kosdaq_pt} <span style='font-size: 0.78rem;'>({kosdaq_chg}%)</span></div>
         </div>
         """, unsafe_allow_html=True)
         
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
     st.markdown(f"💡 <span style='font-size:0.82rem;'><b>가이드:</b> {market_regime['desc']}</span>", unsafe_allow_html=True)
-    st.markdown(f"🎯 <span style='font-size:0.82rem;'><b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:bold; padding:2px 6px; border-radius:4px;'>{safe_alloc}</span></span>", unsafe_allow_html=True)
+    st.markdown(f"🎯 <span style='font-size:0.82rem;'><b>권장 비중:</b> <span style='background:{'#064e3b' if is_dark else '#ecfdf5'}; color:{'#6ee7b7' if is_dark else '#047857'}; font-weight:bold; padding:2px 6px; border-radius:4px;'>{safe_alloc}</span></span>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
 # TAB 1: 퀀트 스크리너
@@ -404,25 +444,66 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오
+# TAB 2: 감시 포트폴리오 & 5% 변동 텔레그램 실시간 알림 엔진
 # -------------------------------------------------------------
 elif active_tab == "monitor":
-    st.markdown("#### 📡 실시간 감시 포트폴리오 & 리스크")
+    st.markdown("#### 📡 실시간 감시 포트폴리오 & 5% 변동 알림")
+    
+    tg_t = saved_creds["tg_token"]
+    tg_c = saved_creds["tg_chat_id"]
+    notifier = TelegramNotifier(tg_t, tg_c) if (tg_t and tg_c) else None
+
+    c_m1, c_m2 = st.columns([1, 1])
+    with c_m1:
+        if st.button("🔄 실시간 시세 & 5% 알림 스캔", use_container_width=True, type="primary"):
+            st.rerun()
+
     current_list = get_saved_watchlist()
     if not current_list:
-        st.info("현재 감시 중인 종목이 없습니다. 퀀트 스크리너에서 유망 종목을 등록하세요.")
+        st.info("현재 감시 중인 종목이 없습니다. 1번 탭(스크리너)에서 유망 종목을 등록하세요.")
     else:
+        updated = False
         for item in current_list:
+            code = item['code']
             buy_p = item['buy_price']
+            
+            # 실시간 현재가 갱신
+            real_p = fetch_realtime_price(code)
+            if real_p:
+                item['current_price'] = real_p
+                item['pnl_pct'] = round(((real_p - buy_p) / buy_p) * 100, 2)
+                updated = True
+
             curr_p = item.get('current_price', buy_p)
             pnl_pct = item.get('pnl_pct', 0.0)
             stop_p = item['stop_price']
             tp_p = item.get('tp_price', int(buy_p * 1.18))
+            last_tier = item.get('last_notified_tier', 0)
 
+            # 🚀 5% 단위 변동 텔레그램 자동 발송 로직 (+5%, +10%, -5% 등)
+            current_tier = int(pnl_pct // 5)
+            if current_tier != 0 and current_tier != last_tier and notifier:
+                direction = "🚀 급등" if pnl_pct > 0 else "🔻 급락/손절주의"
+                alert_msg = (
+                    f"{'🟢' if pnl_pct>0 else '🔴'} [포트폴리오 {direction} 5% 변동 알림]\n\n"
+                    f"• 종목: {item['name']} ({code})\n"
+                    f"• 매수가: {buy_p:,}원 ➡️ 현재가: {curr_p:,}원\n"
+                    f"• 수익률: {pnl_pct:+0.2f}%\n"
+                    f"• 손절선: {stop_p:,}원 | 3R익절선: {tp_p:,}원\n\n"
+                    f"💡 3R 달성 시 50% 분할 익절 후 나머지는 트레일링 스탑 권장."
+                )
+                if notifier.send_message(alert_msg):
+                    item['last_notified_tier'] = current_tier
+                    updated = True
+                    st.toast(f"📢 [{item['name']}] 5% 변동 텔레그램 알림 발송 완료!")
+
+            # 카드 상태 표시
             if curr_p <= stop_p:
                 status_badge = "🛑 <b style='color:#ff8787;'>[손절 발동]</b>"
             elif curr_p <= stop_p * 1.015:
                 status_badge = "⚠️ <b style='color:#f59f00;'>[손절 주의]</b>"
+            elif pnl_pct >= 5.0:
+                status_badge = "🔥 <b style='color:#ff4b4b;'>[5%↑ 급등]</b>"
             elif pnl_pct > 0:
                 status_badge = "🟢 <b style='color:#69db7c;'>[수익 순항]</b>"
             else:
@@ -431,7 +512,7 @@ elif active_tab == "monitor":
             with st.container(border=True):
                 c1, c2 = st.columns([3, 2])
                 with c1:
-                    st.markdown(f"**{item['name']}** <small style='color:#888;'>({item['code']})</small>", unsafe_allow_html=True)
+                    st.markdown(f"**{item['name']}** <small style='color:#888;'>({code})</small>", unsafe_allow_html=True)
                     st.caption(f"매수: {buy_p:,}원 ➡️ 현재: **{curr_p:,}원**")
                 with c2:
                     pnl_color = "#e03131" if pnl_pct > 0 else "#1971c2"
@@ -441,11 +522,14 @@ elif active_tab == "monitor":
                 with c3:
                     st.caption(f"🛑 손절: `{stop_p:,}원` | 🎯 3R: `{tp_p:,}원`")
                 with c4:
-                    if st.button("삭제", key=f"del_{item['code']}", use_container_width=True):
-                        current_list = [s for s in current_list if s["code"] != item["code"]]
+                    if st.button("삭제", key=f"del_{code}", use_container_width=True):
+                        current_list = [s for s in current_list if s["code"] != code]
                         save_watchlist(current_list)
                         st.toast(f"{item['name']} 삭제 완료")
                         st.rerun()
+
+        if updated:
+            save_watchlist(current_list)
 
 # -------------------------------------------------------------
 # TAB 3: 20년 팩트 백테스팅
