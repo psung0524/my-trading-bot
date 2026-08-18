@@ -220,23 +220,43 @@ def save_watchlist(watchlist):
     with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
+@st.cache_data(ttl=86400)
+def get_krx_stock_master():
+    """국내 전 종목 마스터 테이블 캐싱 (1회 다운로드 후 메모리 유지)"""
+    try:
+        url = "https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1"
+        # 한국거래소 KOSPI/KOSDAQ 기본 상장사 리스트 로드
+        df_kospi = pd.read_html("http://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13", header=0)[0]
+        df_kospi = df_kospi[['회사명', '종목코드']].copy()
+        df_kospi['종목코드'] = df_kospi['종목코드'].astype(str).str.zfill(6)
+        df_kospi.columns = ['name', 'code']
+        return df_kospi.to_dict('records')
+    except Exception:
+        # 백업 네이버 시세 기반 핵심 종목 리스트
+        backup_stocks = [
+            {"name": "삼성전자", "code": "005930"}, {"name": "SK하이닉스", "code": "000660"},
+            {"name": "LG에너지솔루션", "code": "373220"}, {"name": "현대차", "code": "005380"},
+            {"name": "기아", "code": "000270"}, {"name": "셀트리온", "code": "068270"},
+            {"name": "에코프로비엠", "code": "247540"}, {"name": "에코프로", "code": "086520"},
+            {"name": "알테오젠", "code": "196170"}, {"name": "한화에어로스페이스", "code": "012450"},
+            {"name": "두산에너빌리티", "code": "034020"}, {"name": "한화오션", "code": "042660"},
+            {"name": "실리콘투", "code": "257720"}, {"name": "현대무벡스", "code": "319400"},
+            {"name": "대한항공", "code": "003490"}, {"name": "NAVER", "code": "035420"},
+            {"name": "카카오", "code": "035720"}, {"name": "POSCO홀딩스", "code": "005490"}
+        ]
+        return backup_stocks
+
 def search_stock_by_name(keyword: str):
-    """네이버 금융 자동완성 검색 API"""
+    """국내 전 종목 실시간 인메모리 초고속 검색"""
     if not keyword or len(keyword.strip()) == 0:
         return []
-    try:
-        url = f"https://ac.finance.naver.com/ac?q={keyword.strip()}&target=stock"
-        res = requests.get(url, timeout=3)
-        data = res.json()
-        items = []
-        if 'items' in data and len(data['items']) > 0:
-            for item in data['items'][0]:
-                name = item[0][0]
-                code = item[1][0]
-                items.append({"name": name, "code": code})
-        return items
-    except Exception:
-        return []
+    
+    kw = keyword.strip().lower()
+    master = get_krx_stock_master()
+    
+    # 종목명 또는 종목코드 매칭 (최대 10개)
+    matched = [s for s in master if (kw in s['name'].lower() or kw in s['code'])][:10]
+    return matched
 
 def fetch_realtime_price(code: str):
     try:
