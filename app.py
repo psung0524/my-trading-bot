@@ -252,7 +252,7 @@ def get_naver_theme_directory():
 
 @st.cache_data(ttl=60)
 def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
-    """테마에 속한 모든 관련 종목을 필터 없이 100% 수집"""
+    """네이버 테마 상세 종목 코드 수집 후 실시간 폴링 API로 정확한 가격/등락률 매핑"""
     if not theme_no:
         t_dir = get_naver_theme_directory()
         theme_no = t_dir.get(theme_name, "")
@@ -266,12 +266,13 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
         return []
 
     stocks = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
         url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
         res = requests.get(url, headers=headers, timeout=4)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
         
+        items = []
         rows = soup.select("table.type_5 tr")
         for row in rows:
             name_tag = row.select_one("td.name a")
@@ -279,24 +280,38 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
                 continue
             name = name_tag.text.strip()
             code = name_tag['href'].split('code=')[-1].strip()
-            
-            tds = row.select("td")
-            if len(tds) < 8:
-                continue
-                
-            curr_str = tds[1].text.strip().replace(",", "")
-            curr_p = int(curr_str) if curr_str.isdigit() else 0
-            
-            chg_str = tds[3].text.strip().replace("%", "").replace("+", "").strip()
-            try:
-                chg_rate = float(chg_str)
-            except Exception:
-                chg_rate = 0.0
-                
-            vol_str = tds[6].text.strip().replace(",", "")
-            vol = int(vol_str) if vol_str.isdigit() else 0
-            amount_eok = round((curr_p * vol) / 100000000, 1)
-            
+            if code:
+                items.append((name, str(code).zfill(6)))
+
+        if not items:
+            return []
+
+        code_list_str = ",".join([c for _, c in items])
+        api_url = f"https://polling.finance.naver.com/api/realtime/domestic/stock/{code_list_str}"
+        api_res = requests.get(api_url, headers=headers, timeout=3)
+        api_data = api_res.json()
+
+        stock_info_map = {}
+        if 'result' in api_data and 'areas' in api_data['result']:
+            for area in api_data['result']['areas']:
+                for it in area.get('datas', []):
+                    c_code = str(it.get('cd', '')).zfill(6)
+                    stock_info_map[c_code] = {
+                        "nv": it.get('nv', 0),
+                        "cr": it.get('cr', 0.0),
+                        "aq": it.get('aq', 0),
+                        "aa": it.get('aa', 0)
+                    }
+
+        for name, code in items:
+            info = stock_info_map.get(code, {})
+            curr_p = int(info.get('nv', 0))
+            chg_rate = float(info.get('cr', 0.0))
+            amount_eok = round(float(info.get('aa', 0)) / 100, 1)
+
+            if curr_p == 0:
+                curr_p = fetch_realtime_price(code) or 0
+
             stocks.append({
                 "종목명": name,
                 "종목코드": code,
@@ -558,7 +573,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (필터 없는 테마 전 종목 뷰 & 초고속 렌더링)
+# TAB 1: 퀀트 스크리너
 # -------------------------------------------------------------
 if active_tab == "screener":
     st.markdown("#### 🔥 주도 테마 & 1,000억↑ 메이저 주도주")
@@ -607,7 +622,6 @@ if active_tab == "screener":
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
     active_theme = st.session_state.get("selected_theme_filter")
     
-    # 🚀 테마 선택 시: 필터 조건 없이 테마 내 모든 관련 종목 현황 리스트업
     if active_theme:
         target_theme_data = next((t for t in top_themes if t["theme_name"] == active_theme), None)
         theme_no = target_theme_data.get('theme_no', '') if target_theme_data else ''
@@ -624,7 +638,6 @@ if active_tab == "screener":
         if theme_stocks:
             df_theme = pd.DataFrame(theme_stocks)
             
-            # 테마 상승/보합/하락 요약 통계
             up_cnt = len(df_theme[df_theme['등락률(%)'] > 0])
             flat_cnt = len(df_theme[df_theme['등락률(%)'] == 0])
             down_cnt = len(df_theme[df_theme['등락률(%)'] < 0])
