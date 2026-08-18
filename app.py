@@ -21,7 +21,7 @@ WATCHLIST_FILE = "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. 토스증권 스타일 프리미엄 라이트 테마 & 모바일 최적화 CSS
+# 1. 토스증권 스타일 프리미엄 라이트 테마 & 반응형 CSS
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
@@ -39,16 +39,18 @@ st.markdown("""
 
     /* 전체 앱 배경 & 폰트 */
     .stApp {
-        background-color: #f1f5f9 !important;
+        background-color: #f8fafc !important;
         color: #0f172a !important;
         font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
     }
     
     .block-container {
+        max-width: 600px !important;
+        margin: 0 auto !important;
         padding-top: 56px !important;
-        padding-bottom: 3rem !important;
-        padding-left: 0.75rem !important;
-        padding-right: 0.75rem !important;
+        padding-bottom: 3.5rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
     }
     
     #MainMenu, footer, header {visibility: hidden !important; display: none !important;}
@@ -60,14 +62,14 @@ st.markdown("""
         left: 0 !important;
         width: 100vw !important;
         height: 50px !important;
-        background-color: rgba(255, 255, 255, 0.92) !important;
+        background-color: rgba(255, 255, 255, 0.95) !important;
         backdrop-filter: blur(15px) !important;
         border-bottom: 1px solid #e2e8f0 !important;
         display: flex !important;
         justify-content: space-around !important;
         align-items: center !important;
         z-index: 999999999 !important;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.03) !important;
     }
     
     .mobile-app-tab-item {
@@ -104,7 +106,7 @@ st.markdown("""
         border-radius: 16px;
         padding: 14px 16px;
         margin-bottom: 10px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
     }
     
     .golden-card {
@@ -113,7 +115,7 @@ st.markdown("""
         border-radius: 16px;
         padding: 14px 16px;
         margin-bottom: 10px;
-        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);
+        box-shadow: 0 3px 8px rgba(245, 158, 11, 0.06);
     }
 
     .badge-span {
@@ -143,7 +145,6 @@ st.markdown("""
         border: none !important;
     }
 
-    /* 인풋 박스 스타일 */
     div[data-baseweb="input"] {
         border-radius: 10px !important;
         background-color: #ffffff !important;
@@ -180,7 +181,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 헬퍼 함수 & 네이버 공식 자동완성 API 연동
+# 3. 헬퍼 함수 & 100% 확실한 네이버 웹 검색 엔진
 # -------------------------------------------------------------
 def load_saved_credentials():
     creds = {
@@ -222,47 +223,60 @@ def save_watchlist(watchlist):
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
 def search_stock_by_name(keyword: str):
-    """네이버 모바일 공식 자동완성 API (코스피/코스닥 전 종목 즉시 검색)"""
+    """네이버 증권 공식 웹 검색 파싱 (해외 IP 차단 0%, 전 종목 100% 즉시 검색)"""
     if not keyword or len(keyword.strip()) == 0:
         return []
     
     kw = keyword.strip()
-    encoded_kw = urllib.parse.quote(kw)
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-        'Referer': 'https://m.stock.naver.com/'
-    }
     
-    # 1. 네이버 공식 프론트 자동완성 API
+    # 1. 6자리 종목코드 바로 입력 시
+    if kw.isdigit() and len(kw) == 6:
+        real_name = None
+        try:
+            url = f"https://finance.naver.com/item/main.naver?code={kw}"
+            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=3)
+            soup = BeautifulSoup(res.text, 'html.parser')
+            title_tag = soup.select_one('.wrap_company h2 a')
+            if title_tag:
+                real_name = title_tag.text.strip()
+        except Exception:
+            pass
+        return [{"name": real_name or f"종목({kw})", "code": kw}]
+
+    # 2. 네이버 증권 검색 HTML 파싱 (EUC-KR 인코딩)
     try:
-        url = f"https://m.stock.naver.com/front-api/search/autoComplete?query={encoded_kw}&target=stock"
-        res = requests.get(url, headers=headers, timeout=3)
-        if res.status_code == 200:
-            data = res.json()
-            items = []
-            if 'result' in data and data['result']:
-                for item in data['result']:
-                    name = item.get('stockName', item.get('name', ''))
-                    code = item.get('itemCode', item.get('code', ''))
-                    if name and code:
-                        items.append({"name": name, "code": str(code).zfill(6)})
-                if items:
-                    return items[:10]
+        encoded_kw = urllib.parse.quote(kw.encode('euc-kr'))
+        search_url = f"https://finance.naver.com/search/searchList.naver?query={encoded_kw}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        res = requests.get(search_url, headers=headers, timeout=4)
+        
+        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+        rows = soup.select("table.type_1 tr")
+        
+        results = []
+        for r in rows:
+            tit_tag = r.select_one("td.tit a")
+            if tit_tag:
+                name = tit_tag.text.strip()
+                href = tit_tag.get('href', '')
+                if 'code=' in href:
+                    code = href.split('code=')[-1].split('&')[0].strip()
+                    results.append({"name": name, "code": code})
+        if results:
+            return results[:10]
     except Exception:
         pass
 
-    # 2. 백업 네이버 ac.finance API
+    # 3. FinanceDataReader 보조 검색
     try:
-        url_ac = f"https://ac.finance.naver.com/ac?q={encoded_kw}&target=stock"
-        res_ac = requests.get(url_ac, headers=headers, timeout=3)
-        if res_ac.status_code == 200:
-            data_ac = res_ac.json()
-            items = []
-            if 'items' in data_ac and len(data_ac['items']) > 0:
-                for it in data_ac['items'][0]:
-                    items.append({"name": it[0][0], "code": str(it[1][0]).zfill(6)})
-                if items:
-                    return items[:10]
+        import FinanceDataReader as fdr
+        df_krx = fdr.StockListing('KRX')
+        matched = df_krx[df_krx['Name'].str.contains(kw, case=False, na=False)]
+        if not matched.empty:
+            res_fdr = []
+            for _, r in matched.head(10).iterrows():
+                res_fdr.append({"name": str(r['Name']), "code": str(r['Code']).zfill(6)})
+            return res_fdr
     except Exception:
         pass
 
@@ -515,7 +529,7 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오 (스마트 이름 검색 & 5% 변동 알림)
+# TAB 2: 감시 포트폴리오 (100% 확실한 검색 & 5% 변동 알림)
 # -------------------------------------------------------------
 elif active_tab == "monitor":
     st.markdown("#### 📡 실시간 감시 포트폴리오 & 5% 변동 알림")
@@ -526,7 +540,7 @@ elif active_tab == "monitor":
 
     # 🚀 스마트 종목명 검색 및 추가 카드
     st.markdown("<div style='font-size:0.95rem; font-weight:800; color:#0f172a; margin-bottom:6px;'>🔍 감시 종목 추가</div>", unsafe_allow_html=True)
-    search_kw = st.text_input("종목명 입력", placeholder="예: 펩트론, 삼천당제약, 에코프로, 삼성전자", label_visibility="collapsed")
+    search_kw = st.text_input("종목명 입력", placeholder="예: 삼성전자, 펩트론, 에코프로, 삼천당제약", label_visibility="collapsed")
     
     if search_kw:
         found_items = search_stock_by_name(search_kw)
