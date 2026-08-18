@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import os
 import requests
+import urllib.parse
 from bs4 import BeautifulSoup
 from pathlib import Path
 from datetime import datetime
@@ -179,7 +180,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 헬퍼 함수 & 네이버 검색 API
+# 3. 헬퍼 함수 & 네이버 공식 자동완성 API 연동
 # -------------------------------------------------------------
 def load_saved_credentials():
     creds = {
@@ -220,43 +221,52 @@ def save_watchlist(watchlist):
     with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
-@st.cache_data(ttl=86400)
-def get_krx_stock_master():
-    """국내 전 종목 마스터 테이블 캐싱 (1회 다운로드 후 메모리 유지)"""
-    try:
-        url = "https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page=1"
-        # 한국거래소 KOSPI/KOSDAQ 기본 상장사 리스트 로드
-        df_kospi = pd.read_html("http://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13", header=0)[0]
-        df_kospi = df_kospi[['회사명', '종목코드']].copy()
-        df_kospi['종목코드'] = df_kospi['종목코드'].astype(str).str.zfill(6)
-        df_kospi.columns = ['name', 'code']
-        return df_kospi.to_dict('records')
-    except Exception:
-        # 백업 네이버 시세 기반 핵심 종목 리스트
-        backup_stocks = [
-            {"name": "삼성전자", "code": "005930"}, {"name": "SK하이닉스", "code": "000660"},
-            {"name": "LG에너지솔루션", "code": "373220"}, {"name": "현대차", "code": "005380"},
-            {"name": "기아", "code": "000270"}, {"name": "셀트리온", "code": "068270"},
-            {"name": "에코프로비엠", "code": "247540"}, {"name": "에코프로", "code": "086520"},
-            {"name": "알테오젠", "code": "196170"}, {"name": "한화에어로스페이스", "code": "012450"},
-            {"name": "두산에너빌리티", "code": "034020"}, {"name": "한화오션", "code": "042660"},
-            {"name": "실리콘투", "code": "257720"}, {"name": "현대무벡스", "code": "319400"},
-            {"name": "대한항공", "code": "003490"}, {"name": "NAVER", "code": "035420"},
-            {"name": "카카오", "code": "035720"}, {"name": "POSCO홀딩스", "code": "005490"}
-        ]
-        return backup_stocks
-
 def search_stock_by_name(keyword: str):
-    """국내 전 종목 실시간 인메모리 초고속 검색"""
+    """네이버 모바일 공식 자동완성 API (코스피/코스닥 전 종목 즉시 검색)"""
     if not keyword or len(keyword.strip()) == 0:
         return []
     
-    kw = keyword.strip().lower()
-    master = get_krx_stock_master()
+    kw = keyword.strip()
+    encoded_kw = urllib.parse.quote(kw)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+        'Referer': 'https://m.stock.naver.com/'
+    }
     
-    # 종목명 또는 종목코드 매칭 (최대 10개)
-    matched = [s for s in master if (kw in s['name'].lower() or kw in s['code'])][:10]
-    return matched
+    # 1. 네이버 공식 프론트 자동완성 API
+    try:
+        url = f"https://m.stock.naver.com/front-api/search/autoComplete?query={encoded_kw}&target=stock"
+        res = requests.get(url, headers=headers, timeout=3)
+        if res.status_code == 200:
+            data = res.json()
+            items = []
+            if 'result' in data and data['result']:
+                for item in data['result']:
+                    name = item.get('stockName', item.get('name', ''))
+                    code = item.get('itemCode', item.get('code', ''))
+                    if name and code:
+                        items.append({"name": name, "code": str(code).zfill(6)})
+                if items:
+                    return items[:10]
+    except Exception:
+        pass
+
+    # 2. 백업 네이버 ac.finance API
+    try:
+        url_ac = f"https://ac.finance.naver.com/ac?q={encoded_kw}&target=stock"
+        res_ac = requests.get(url_ac, headers=headers, timeout=3)
+        if res_ac.status_code == 200:
+            data_ac = res_ac.json()
+            items = []
+            if 'items' in data_ac and len(data_ac['items']) > 0:
+                for it in data_ac['items'][0]:
+                    items.append({"name": it[0][0], "code": str(it[1][0]).zfill(6)})
+                if items:
+                    return items[:10]
+    except Exception:
+        pass
+
+    return []
 
 def fetch_realtime_price(code: str):
     try:
@@ -505,7 +515,7 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오 (스마트 이름 검색 추가 & 5% 변동 알림)
+# TAB 2: 감시 포트폴리오 (스마트 이름 검색 & 5% 변동 알림)
 # -------------------------------------------------------------
 elif active_tab == "monitor":
     st.markdown("#### 📡 실시간 감시 포트폴리오 & 5% 변동 알림")
@@ -514,51 +524,53 @@ elif active_tab == "monitor":
     tg_c = saved_creds["tg_chat_id"]
     notifier = TelegramNotifier(tg_t, tg_c) if (tg_t and tg_c) else None
 
-    # 🚀 스마트 종목명 자동완성 추가 폼
-    with st.expander("🔍 종목명으로 간편 추가하기", expanded=False):
-        search_kw = st.text_input("종목명 검색 (예: 삼성전자, 에코프로, 현대)", placeholder="종목명을 입력하세요")
-        if search_kw:
-            found_items = search_stock_by_name(search_kw)
-            if found_items:
-                sel_stock = st.selectbox(
-                    "검색 결과 선택",
-                    found_items,
-                    format_func=lambda x: f"📌 {x['name']} ({x['code']})"
-                )
-                
-                real_p = fetch_realtime_price(sel_stock['code']) or 0
-                c_in1, c_in2 = st.columns(2)
-                with c_in1:
-                    buy_price_in = st.number_input("매수가 (원)", value=real_p, step=500)
-                with c_in2:
-                    stop_pct_in = st.number_input("손절선 (%)", value=6.0, step=0.5)
+    # 🚀 스마트 종목명 검색 및 추가 카드
+    st.markdown("<div style='font-size:0.95rem; font-weight:800; color:#0f172a; margin-bottom:6px;'>🔍 감시 종목 추가</div>", unsafe_allow_html=True)
+    search_kw = st.text_input("종목명 입력", placeholder="예: 펩트론, 삼천당제약, 에코프로, 삼성전자", label_visibility="collapsed")
+    
+    if search_kw:
+        found_items = search_stock_by_name(search_kw)
+        if found_items:
+            sel_stock = st.selectbox(
+                "검색 결과 선택",
+                found_items,
+                format_func=lambda x: f"📌 {x['name']} ({x['code']})"
+            )
+            
+            real_p = fetch_realtime_price(sel_stock['code']) or 0
+            c_in1, c_in2 = st.columns(2)
+            with c_in1:
+                buy_price_in = st.number_input("매수가 (원)", value=real_p if real_p > 0 else 10000, step=500)
+            with c_in2:
+                stop_pct_in = st.number_input("손절선 (%)", value=6.0, step=0.5)
 
-                if st.button(f"➕ [{sel_stock['name']}] 포트폴리오 등록", use_container_width=True, type="primary"):
-                    curr_list = get_saved_watchlist()
-                    curr_list = [s for s in curr_list if s["code"] != sel_stock["code"]]
-                    calc_stop = int(buy_price_in * (1 - (stop_pct_in / 100)))
-                    calc_tp = int(buy_price_in * (1 + ((stop_pct_in * 3) / 100)))
-                    
-                    curr_list.append({
-                        "name": sel_stock['name'],
-                        "code": str(sel_stock['code']).zfill(6),
-                        "buy_price": buy_price_in,
-                        "current_price": buy_price_in,
-                        "pnl_pct": 0.0,
-                        "stop_price": calc_stop,
-                        "stop_pct": -stop_pct_in,
-                        "tp_price": calc_tp,
-                        "tp_pct": stop_pct_in * 3,
-                        "last_notified_tier": 0,
-                        "theme": "직접등록",
-                        "strategy": "CUSTOM",
-                        "added_at": datetime.now().strftime("%Y-%m-%d %H:%M")
-                    })
-                    save_watchlist(curr_list)
-                    st.toast(f"✅ [{sel_stock['name']}] 등록 완료!")
-                    st.rerun()
-            else:
-                st.caption("검색 결과가 없습니다.")
+            if st.button(f"➕ [{sel_stock['name']}] 포트폴리오에 등록", use_container_width=True, type="primary"):
+                curr_list = get_saved_watchlist()
+                curr_list = [s for s in curr_list if s["code"] != sel_stock["code"]]
+                calc_stop = int(buy_price_in * (1 - (stop_pct_in / 100)))
+                calc_tp = int(buy_price_in * (1 + ((stop_pct_in * 3) / 100)))
+                
+                curr_list.append({
+                    "name": sel_stock['name'],
+                    "code": str(sel_stock['code']).zfill(6),
+                    "buy_price": buy_price_in,
+                    "current_price": buy_price_in,
+                    "pnl_pct": 0.0,
+                    "stop_price": calc_stop,
+                    "stop_pct": -stop_pct_in,
+                    "tp_price": calc_tp,
+                    "tp_pct": stop_pct_in * 3,
+                    "last_notified_tier": 0,
+                    "theme": "직접등록",
+                    "strategy": "CUSTOM",
+                    "added_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+                })
+                save_watchlist(curr_list)
+                st.toast(f"✅ [{sel_stock['name']}] 등록 완료!")
+                st.rerun()
+        else:
+            st.caption(f"'{search_kw}'에 대한 검색 결과가 없습니다.")
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
     if st.button("🔄 실시간 시세 조회 & 5% 변동 감시", use_container_width=True, type="primary"):
         st.rerun()
