@@ -24,13 +24,13 @@ OLD_WATCHLIST_FILE = Path(__file__).parent / "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. UI 설정 & 사이드바 복원 & 계정 자동 기억
+# 1. UI 설정 & 계정 자동 기억 (Local Storage)
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="auto"
+    initial_sidebar_state="collapsed"
 )
 
 query_params = st.query_params
@@ -75,7 +75,7 @@ st.markdown("""
     .block-container {
         max-width: 620px !important;
         margin: 0 auto !important;
-        padding-top: 58px !important;
+        padding-top: 54px !important;
         padding-bottom: 3.5rem !important;
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
@@ -83,17 +83,7 @@ st.markdown("""
     
     #MainMenu, footer {visibility: hidden !important; display: none !important;}
     
-    /* 사이드바 토글 버튼 전면 표시 */
-    [data-testid="stSidebarCollapsedControl"] {
-        z-index: 1000000000 !important;
-        top: 8px !important;
-        left: 8px !important;
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 8px !important;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.08) !important;
-    }
-    
+    /* 🚀 모바일 상단 6대 핵심 메뉴 바 */
     .mobile-app-top-bar {
         position: fixed !important;
         top: 0 !important;
@@ -118,7 +108,7 @@ st.markdown("""
         justify-content: center !important;
         text-decoration: none !important;
         color: #64748b !important;
-        font-size: 0.72rem !important;
+        font-size: 0.68rem !important;
         font-weight: 700 !important;
         height: 100% !important;
         border-bottom: 3px solid transparent !important;
@@ -133,7 +123,7 @@ st.markdown("""
     }
     
     .mobile-app-tab-icon {
-        font-size: 1.15rem;
+        font-size: 1.05rem;
         margin-bottom: 1px;
     }
     
@@ -190,7 +180,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 2. 상단 고정 네비게이션 바
+# 2. 모바일 친화 상단 네비게이션 바 (설정 탭 직접 포함)
 # -------------------------------------------------------------
 st.markdown(f"""
 <div class="mobile-app-top-bar">
@@ -213,6 +203,10 @@ st.markdown(f"""
     <a href="?user={current_user}&tab=report" target="_self" class="mobile-app-tab-item {'active' if active_tab=='report' else ''}">
         <div class="mobile-app-tab-icon">🧠</div>
         <div>복기코칭</div>
+    </a>
+    <a href="?user={current_user}&tab=settings" target="_self" class="mobile-app-tab-item {'active' if active_tab=='settings' else ''}">
+        <div class="mobile-app-tab-icon">⚙️</div>
+        <div>설정</div>
     </a>
 </div>
 """, unsafe_allow_html=True)
@@ -283,16 +277,14 @@ def save_watchlist(user_id: str, watchlist):
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
 # -------------------------------------------------------------
-# 4. ⚡ 스피드 최적화 캐싱 엔진 (3분 자동 캐시)
+# 4. 스피드 최적화 캐싱 & 실시간 시세 엔진
 # -------------------------------------------------------------
 @st.cache_data(ttl=180, show_spinner=False)
 def get_cached_screener_data():
-    """초기 로딩 병목 해소: 5대 전략 퀀트 스캔 3분 캐싱"""
     return NaverStockScreener.run_multi_strategy_screen()
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_cached_market_regime():
-    """시장 레짐 데이터 캐싱"""
     return NaverStockScreener.get_market_regime()
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -583,57 +575,9 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
             st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 5. 사이드바 (사용자 계정 & 시스템 설정)
+# 5. 시장 지수 대시보드
 # -------------------------------------------------------------
 saved_creds = load_user_credentials(current_user)
-
-with st.sidebar:
-    st.header("👤 사용자 계정 관리")
-    user_input = st.text_input("접속 계정 ID (예: asung, mybot)", value=current_user)
-    if st.button("🔄 계정 전환", use_container_width=True):
-        if user_input.strip():
-            st.session_state["current_user"] = user_input.strip()
-            st.query_params["user"] = user_input.strip()
-            st.toast(f"✅ '{user_input.strip()}' 계정으로 전환되었습니다.")
-            st.rerun()
-            
-    st.info(f"현재 접속 계정: **`{current_user}`**\n\n내 전용 고정 링크:\n`?user={current_user}`")
-
-    st.divider()
-    st.header(f"⚙️ [{current_user}] 전용 설정")
-    api_key = st.text_input("Gemini API Key", type="password", value=saved_creds["gemini_api_key"])
-    
-    st.header("📲 텔레그램 알림 설정")
-    tg_token = st.text_input("Bot Token", type="password", value=saved_creds["tg_token"])
-    tg_chat_id = st.text_input("My Chat ID", value=saved_creds["tg_chat_id"])
-    
-    col_save, col_test = st.columns([1, 1])
-    with col_save:
-        if st.button("💾 영구 저장", use_container_width=True, type="primary"):
-            cfg_file = get_user_config_file(current_user)
-            with open(cfg_file, "w", encoding="utf-8") as f:
-                json.dump({
-                    "gemini_api_key": api_key.strip(),
-                    "tg_token": tg_token.strip(),
-                    "tg_chat_id": tg_chat_id.strip()
-                }, f, ensure_ascii=False, indent=2)
-            st.toast(f"✅ [{current_user}] 설정값이 저장되었습니다!")
-            st.rerun()
-
-    with col_test:
-        if st.button("🔔 연결 테스트", use_container_width=True):
-            if tg_token and tg_chat_id:
-                notifier = TelegramNotifier(tg_token, tg_chat_id)
-                if notifier.send_message(f"✅ *[{current_user}] 계정과 텔레그램이 완벽히 연동되었습니다.*"):
-                    st.success("발송 성공!")
-                else:
-                    st.error("토큰/ID를 확인하세요.")
-            else:
-                st.warning("토큰과 ID를 입력하세요.")
-
-# -------------------------------------------------------------
-# 6. 시장 지수 대시보드
-# -------------------------------------------------------------
 market_regime = get_cached_market_regime()
 safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
 
@@ -669,7 +613,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (초고속 캐시 로딩 적용)
+# TAB 1: 퀀트 스크리너
 # -------------------------------------------------------------
 if active_tab == "screener":
     st.markdown("#### 🔥 주도 테마 & 1,000억↑ 메이저 주도주")
@@ -686,7 +630,6 @@ if active_tab == "screener":
         st.cache_data.clear()
         st.rerun()
 
-    # 초고속 캐시 로딩
     themes_data, all_df = get_cached_screener_data()
     top_themes = themes_data
 
@@ -1023,7 +966,7 @@ elif active_tab == "briefing":
                         st.success("발송 완료!")
                         st.markdown(msg)
                 else:
-                    st.warning("사이드바에서 텔레그램 설정을 먼저 저장하세요.")
+                    st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
         with st.container():
             st.markdown("""
@@ -1040,7 +983,7 @@ elif active_tab == "briefing":
                         st.success("발송 완료!")
                         st.markdown(msg)
                 else:
-                    st.warning("사이드바에서 텔레그램 설정을 먼저 저장하세요.")
+                    st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
     with c_b2:
         with st.container():
@@ -1058,7 +1001,7 @@ elif active_tab == "briefing":
                         st.success("발송 완료!")
                         st.markdown(msg)
                 else:
-                    st.warning("사이드바에서 텔레그램 설정을 먼저 저장하세요.")
+                    st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
         with st.container():
             st.markdown("""
@@ -1075,7 +1018,7 @@ elif active_tab == "briefing":
                         st.success("발송 완료!")
                         st.markdown(msg)
                 else:
-                    st.warning("사이드바에서 텔레그램 설정을 먼저 저장하세요.")
+                    st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
 # -------------------------------------------------------------
 # TAB 5: 매매복기 & AI 심층진단
@@ -1108,6 +1051,66 @@ elif active_tab == "report":
                         st.markdown("---")
                         st.markdown(res.text)
             else:
-                st.warning("사이드바에서 Gemini API 키를 먼저 입력하고 [영구 저장]을 눌러주세요.")
+                st.warning("설정 탭에서 Gemini API 키를 먼저 입력하고 [영구 저장]을 눌러주세요.")
         except Exception as e:
             st.error(f"엑셀 분석 중 오류: {str(e)}")
+
+# -------------------------------------------------------------
+# TAB 6: ⚙️ 시스템 & 계정 전용 설정 탭 (모바일 최적화)
+# -------------------------------------------------------------
+elif active_tab == "settings":
+    st.markdown("#### ⚙️ 시스템 설정 및 계정 관리")
+    
+    with st.container():
+        st.markdown(f"""
+        <div class='toss-card'>
+            <div style='font-size:1.0rem; font-weight:800; margin-bottom:4px;'>👤 사용자 계정 관리</div>
+            <div style='font-size:0.8rem; color:#64748b;'>현재 로그인 계정: <b>{current_user}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        new_u = st.text_input("접속 계정 ID 변경", value=current_user)
+        if st.button("🔄 계정 전환하기", use_container_width=True):
+            if new_u.strip():
+                st.session_state["current_user"] = new_u.strip()
+                st.query_params["user"] = new_u.strip()
+                st.toast(f"✅ '{new_u.strip()}' 계정으로 전환되었습니다!")
+                st.rerun()
+
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    
+    with st.container():
+        st.markdown(f"""
+        <div class='toss-card'>
+            <div style='font-size:1.0rem; font-weight:800; margin-bottom:4px;'>🔑 [{current_user}] API & 텔레그램 연동</div>
+            <div style='font-size:0.8rem; color:#64748b;'>저장된 설정은 해당 계정에만 안전하게 개별 보관됩니다.</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        api_key = st.text_input("Gemini API Key", type="password", value=saved_creds["gemini_api_key"])
+        tg_token = st.text_input("텔레그램 Bot Token", type="password", value=saved_creds["tg_token"])
+        tg_chat_id = st.text_input("텔레그램 Chat ID", value=saved_creds["tg_chat_id"])
+        
+        c_sv, c_tt = st.columns(2)
+        with c_sv:
+            if st.button("💾 설정 영구 저장", use_container_width=True, type="primary"):
+                cfg_file = get_user_config_file(current_user)
+                with open(cfg_file, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "gemini_api_key": api_key.strip(),
+                        "tg_token": tg_token.strip(),
+                        "tg_chat_id": tg_chat_id.strip()
+                    }, f, ensure_ascii=False, indent=2)
+                st.toast(f"✅ [{current_user}] 설정이 저장되었습니다!")
+                st.rerun()
+                
+        with c_tt:
+            if st.button("🔔 텔레그램 테스트", use_container_width=True):
+                if tg_token and tg_chat_id:
+                    notifier = TelegramNotifier(tg_token, tg_chat_id)
+                    if notifier.send_message(f"✅ *[{current_user}] 계정과 텔레그램이 완벽히 연동되었습니다.*"):
+                        st.success("발송 성공!")
+                    else:
+                        st.error("토큰/ID를 확인하세요.")
+                else:
+                    st.warning("토큰과 ID를 입력하세요.")
