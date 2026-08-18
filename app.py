@@ -17,6 +17,8 @@ from notifier import TelegramNotifier
 CONFIG_DIR = Path(__file__).parent / "user_data"
 CONFIG_DIR.mkdir(exist_ok=True)
 ENV_FILE = Path(__file__).parent / ".env"
+OLD_CONFIG_FILE = Path(__file__).parent / "config.json"
+OLD_WATCHLIST_FILE = Path(__file__).parent / "watchlist.json"
 
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
@@ -184,7 +186,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 사용자별 설정 & 초고속 데이터 캐싱 엔진
+# 3. 사용자별 설정 & 기존 데이터 자동 복구 엔진
 # -------------------------------------------------------------
 def get_user_config_file(user_id: str) -> Path:
     safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "default"
@@ -201,6 +203,16 @@ def load_user_credentials(user_id: str):
         "tg_chat_id": os.getenv("TELEGRAM_CHAT_ID", "")
     }
     cfg_file = get_user_config_file(user_id)
+    # 기존 단일 파일 복구 처리
+    if not cfg_file.exists() and OLD_CONFIG_FILE.exists():
+        try:
+            with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                with open(cfg_file, "w", encoding="utf-8") as wf:
+                    json.dump(data, wf, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
     if cfg_file.exists():
         try:
             with open(cfg_file, "r", encoding="utf-8") as f:
@@ -214,6 +226,17 @@ def load_user_credentials(user_id: str):
 
 def get_saved_watchlist(user_id: str):
     w_file = get_user_watchlist_file(user_id)
+    # 기존 단일 watchlist.json 파일 복구 처리
+    if not w_file.exists() and OLD_WATCHLIST_FILE.exists():
+        try:
+            with open(OLD_WATCHLIST_FILE, "r", encoding="utf-8") as f:
+                old_data = json.load(f)
+                with open(w_file, "w", encoding="utf-8") as wf:
+                    json.dump(old_data, wf, ensure_ascii=False, indent=2)
+                return old_data
+        except Exception:
+            pass
+
     if not w_file.exists():
         with open(w_file, "w", encoding="utf-8") as f:
             json.dump([], f)
@@ -231,7 +254,6 @@ def save_watchlist(user_id: str, watchlist):
 
 @st.cache_data(ttl=600)
 def get_naver_theme_directory():
-    """네이버 테마명 -> 테마 고유번호(no) 매핑 테이블 캐싱"""
     theme_map = {}
     headers = {'User-Agent': 'Mozilla/5.0'}
     for page in range(1, 8):
@@ -252,7 +274,6 @@ def get_naver_theme_directory():
 
 @st.cache_data(ttl=60)
 def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
-    """네이버 테마 상세 종목 코드 수집 후 실시간 폴링 API로 정확한 가격/등락률 매핑"""
     if not theme_no:
         t_dir = get_naver_theme_directory()
         theme_no = t_dir.get(theme_name, "")
@@ -493,7 +514,7 @@ saved_creds = load_user_credentials(current_user)
 
 with st.sidebar:
     st.header("👤 사용자 계정 관리")
-    user_input = st.text_input("접속 계정 ID", value=current_user)
+    user_input = st.text_input("접속 계정 ID (예: asung, mybot)", value=current_user)
     if st.button("🔄 계정 전환", use_container_width=True):
         if user_input.strip():
             st.session_state["current_user"] = user_input.strip()
@@ -501,7 +522,7 @@ with st.sidebar:
             st.toast(f"✅ '{user_input.strip()}' 계정으로 전환되었습니다.")
             st.rerun()
             
-    st.info(f"현재 접속 계정: **`{current_user}`**\n\n내 전용 링크:\n`?user={current_user}`")
+    st.info(f"현재 접속 계정: **`{current_user}`**\n\n내 전용 고정 링크:\n`?user={current_user}`")
 
     st.divider()
     st.header(f"⚙️ [{current_user}] 전용 설정")
@@ -722,7 +743,7 @@ elif active_tab == "monitor":
 
             if st.button(f"➕ [{sel_stock['name']}] 등록", use_container_width=True, type="primary"):
                 curr_list = get_saved_watchlist(current_user)
-                curr_list = [s for s in curr_list if s["code"] != sel_stock["code"]]
+                curr_list = [s for s in current_list if s["code"] != sel_stock["code"]]
                 calc_stop = int(buy_price_in * (1 - (stop_pct_in / 100)))
                 calc_tp = int(buy_price_in * (1 + ((stop_pct_in * 3) / 100)))
                 
