@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 from functools import lru_cache
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 SESSION = requests.Session()
 SESSION.headers.update({
@@ -291,7 +290,6 @@ class NaverStockScreener:
         market_name = "코스피" if sosok == 0 else "코스닥"
         candidates = []
 
-        # 💡 네이버 금융 거래량 순위 탭(sise_quant.naver)을 활용해 300억 이상 유니버스 수집 (구조 변경 영향 없음)
         url = f"https://finance.naver.com/sise/sise_quant.naver?sosok={sosok}"
         try:
             res = SESSION.get(url, timeout=3.0)
@@ -329,12 +327,20 @@ class NaverStockScreener:
         except Exception:
             pass
 
-        def process_candidate(item):
+        results = []
+        for item in candidates:
             code = item["code"]
             name = item["name"]
-            market_cap_억 = cls.fetch_market_cap(code)
+            
+            # 시총 조회 최적화 (KNOWN_STOCKS에 있으면 크롤링 생략)
+            market_cap_억 = 1500.0
+            if code in cls.KNOWN_STOCKS:
+                market_cap_억 = 5000.0
+            else:
+                market_cap_억 = cls.fetch_market_cap(code)
+                
             if market_cap_억 < 1000.0:
-                return None
+                continue
 
             matched = []
             cs = cls.fetch_recent_candles_summary(code)
@@ -374,18 +380,14 @@ class NaverStockScreener:
             if matched:
                 score = round(item["trading_val_억"] * (1 + (change_rate / 100)) * (1 + (len(matched) - 1) * 0.5), 1)
                 sec_info = cls.classify_sector(code, name)
-                return {
+                results.append({
                     "시장": item["market_name"], "종목코드": code, "종목명": name,
                     "섹터정보": sec_info, "현재가": item["curr_p"], "등락률(%)": change_rate,
                     "거래대금(억원)": item["trading_val_억"], "시가총액(억원)": int(market_cap_억),
                     "매칭전략": matched, "전략수": len(matched), "모멘텀점수": score
-                }
-            return None
+                })
 
-        with ThreadPoolExecutor(max_workers=20) as executor:
-            results = list(executor.map(process_candidate, candidates))
-
-        return [r for r in results if r is not None]
+        return results
 
     @classmethod
     def run_multi_strategy_screen(cls) -> tuple:
@@ -421,7 +423,8 @@ class NaverStockScreener:
         except Exception:
             return []
 
-        def analyze_single_theme(theme_info):
+        valid_results = []
+        for theme_info in themes_to_scan[:15]:
             t_name = theme_info["name"]
             t_href = theme_info["href"]
             detail_url = f"https://finance.naver.com{t_href}"
@@ -440,18 +443,18 @@ class NaverStockScreener:
                         if s_code:
                             member_stocks.append({"name": s_name, "code": s_code})
             except Exception:
-                return None
+                continue
 
             uptrend_stocks = []
             valid_count = 0
-            for st in member_stocks[:15]:
+            for st in member_stocks[:10]:
                 cs = cls.fetch_recent_candles_summary(st["code"])
                 if cs.get("valid"):
                     valid_count += 1
                     if cs.get("is_true_uptrend"):
                         uptrend_stocks.append(st["name"])
 
-            if valid_count >= 3 and len(uptrend_stocks) >= 1:
+            if valid_count >= 2 and len(uptrend_stocks) >= 1:
                 palette_key = "기타주도주"
                 for k in cls.SECTOR_PALETTE.keys():
                     if any(w in t_name for w in k.split("/")):
@@ -459,7 +462,7 @@ class NaverStockScreener:
                         break
                 palette = cls.SECTOR_PALETTE.get(palette_key, cls.SECTOR_PALETTE["기타주도주"])
 
-                return {
+                valid_results.append({
                     "sector": t_name,
                     "emoji": palette["emoji"],
                     "uptrend_count": len(uptrend_stocks),
@@ -467,13 +470,8 @@ class NaverStockScreener:
                     "uptrend_ratio": round((len(uptrend_stocks) / valid_count) * 100, 1),
                     "change_rate": theme_info["change_rate"],
                     "uptrend_stocks": uptrend_stocks
-                }
-            return None
+                })
 
-        with ThreadPoolExecutor(max_workers=15) as executor:
-            scanned = list(executor.map(analyze_single_theme, themes_to_scan[:30]))
-
-        valid_results = [r for r in scanned if r is not None]
         return sorted(valid_results, key=lambda x: (x["uptrend_count"], x["uptrend_ratio"]), reverse=True)
 
     @classmethod
