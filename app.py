@@ -1,523 +1,329 @@
 import streamlit as st
-import pandas as pd
 import json
 import os
-from pathlib import Path
+import pandas as pd
 from datetime import datetime
-from dotenv import load_dotenv
-from google import genai
-from main import SamsungSecuritiesParser, TradeFIFOEngine, TradingMetricsAnalyzer, get_best_available_model
-from screener import NaverStockScreener
+
+# 모듈 불러오기
+from screener import MarketScreener
 from notifier import TelegramNotifier
+from main import SamsungSecuritiesParser, TradeFIFOEngine, TradingMetricsAnalyzer, GeminiTradeCoach
 
-CONFIG_FILE = Path(__file__).parent / "config.json"
-ENV_FILE = Path(__file__).parent / ".env"
-WATCHLIST_FILE = "watchlist.json"
+# -------------------------------------------------------------
+# 1. 모바일 맞춤 페이지 설정 및 반응형 CSS
+# -------------------------------------------------------------
+st.set_page_config(
+    page_title="AI 트레이딩 코치",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-load_dotenv(dotenv_path=ENV_FILE, override=True)
-
-def load_saved_credentials():
-    creds = {
-        "gemini_api_key": os.getenv("GEMINI_API_KEY", ""),
-        "tg_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
-        "tg_chat_id": os.getenv("TELEGRAM_CHAT_ID", "")
+# 모바일 가독성 극대화 CSS
+st.markdown("""
+<style>
+    /* 상단 기본 여백 축소 */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
     }
-    if CONFIG_FILE.exists():
+    /* 모바일 헤더 타이틀 최적화 */
+    .main-title {
+        font-size: 1.35rem !important;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+        line-height: 1.3;
+    }
+    /* 모바일 카드 스타일 */
+    .mobile-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .dark-mode-card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-bottom: 12px;
+    }
+    /* 지수 뱃지 */
+    .index-badge {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #64748b;
+        margin-bottom: 4px;
+    }
+    /* 버튼 모바일 터치 최적화 */
+    .stButton button {
+        width: 100% !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1rem !important;
+    }
+    /* 데이터프레임 모바일 폰트 */
+    .stDataFrame {
+        font-size: 0.85rem !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------------------------------------------
+# 2. 설정 파일 관리 함수
+# -------------------------------------------------------------
+CONFIG_FILE = "config.json"
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                creds["gemini_api_key"] = data.get("gemini_api_key") or creds["gemini_api_key"]
-                creds["tg_token"] = data.get("tg_token") or creds["tg_token"]
-                creds["tg_chat_id"] = data.get("tg_chat_id") or creds["tg_chat_id"]
+                return json.load(f)
         except Exception:
             pass
-    return creds
-
-def get_saved_watchlist():
-    if not os.path.exists(WATCHLIST_FILE):
-        with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f)
-        return []
-    try:
-        with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
-
-def save_watchlist(watchlist):
-    with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
-        json.dump(watchlist, f, ensure_ascii=False, indent=2)
-
-def format_korean_money(amount_eok: float) -> str:
-    if amount_eok >= 10000:
-        jo = int(amount_eok // 10000)
-        eok = int(amount_eok % 10000)
-        return f"{jo}조 {eok:,}억 원" if eok > 0 else f"{jo}조 원"
-    return f"{int(amount_eok):,}억 원"
-
-@st.dialog("📈 실시간 인터랙티브 차트 & 호가")
-def show_chart_modal(code: str, name: str):
-    st.markdown(f"### {name} (`{code}`)")
-    st.markdown(f"[🔗 네이버 증권 전체 차트 새 창으로 열기](https://finance.naver.com/item/main.naver?code={code})")
-    chart_url = f"https://ssl.pstatic.net/imgfinance/chart/item/area/day/{code}.png"
-    st.image(chart_url, caption="일봉 차트", use_container_width=True)
-
-def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
-    curr_p = int(row['현재가'])
-    calc_stop = int(curr_p * (1 - (default_stop_pct / 100)))
-    take_profit_3r_pct = round(default_stop_pct * 3.0, 1)
-    calc_tp_3r = int(curr_p * (1 + (take_profit_3r_pct / 100)))
-
-    formatted_money = format_korean_money(row['거래대금(억원)'])
-    is_golden = row['전략수'] >= 2
-
-    border_style = "border: 2px solid #f59f00; background-color: rgba(245, 159, 0, 0.04);" if is_golden else "border: 1px solid rgba(128, 128, 128, 0.2);"
-    golden_badge = f"<span style='background-color:#f59f00; color:#000; font-weight:bold; font-size:11px; padding:2px 6px; border-radius:4px;'>🔥 {row['전략수']}개 전략 동시만족</span> " if is_golden else ""
-
-    strat_badges = ""
-    for s_code in row['매칭전략']:
-        info = NaverStockScreener.STRATEGIES.get(s_code, {})
-        strat_badges += f"<span style='background-color:#333; color:#fff; font-size:11px; padding:2px 5px; border-radius:4px; margin-right:4px;'>{info.get('badge', s_code)}</span>"
-
-    sec = row.get('섹터정보', {})
-    sec_cat = sec.get('category', '주도주')
-    raw_ind = sec.get('raw_industry', sec_cat)
-    sec_emoji = sec.get('emoji', '🔥')
-    sec_bg = sec.get('bg', '#374151')
-    sec_color = sec.get('color', '#f3f4f6')
-    
-    tag_label = f"{sec_emoji} {sec_cat}" if sec_cat == raw_ind else f"{sec_emoji} {sec_cat} ({raw_ind})"
-    theme_chip = f"<span style='background-color:{sec_bg}; color:{sec_color}; font-size:11px; font-weight:bold; padding:3px 8px; border-radius:6px;'>{tag_label}</span>"
-
-    st.markdown(f"""
-    <div style='padding: 12px 14px; border-radius: 8px; {border_style} margin-bottom: 6px;'>
-        <div style='display:flex; justify-content:space-between; align-items:center;'>
-            <div>
-                {golden_badge} <strong>{row['종목명']}</strong> <small style='color:#888;'>{row['종목코드']}</small> &nbsp; {theme_chip}
-            </div>
-            <div>{strat_badges}</div>
-        </div>
-        <div style='margin-top: 6px; font-size: 14px;'>
-            <strong>{curr_p:,}원</strong> <span style='color:#e03131; font-weight:bold;'>+{row['등락률(%)']}%</span> &nbsp;|&nbsp; 📊 거래대금 <strong>{formatted_money}</strong> &nbsp;|&nbsp; 시총 <strong>{row.get('시가총액(억원)', 0):,}억</strong>
-        </div>
-        <div style='margin-top: 6px; font-size: 12px; color: #aaa;'>
-            🛑 손절: <strong style='color:#ff8787;'>{calc_stop:,}원 (-{default_stop_pct}%)</strong> &nbsp;|&nbsp; 
-            🎯 3R 50%익절: <strong style='color:#69db7c;'>{calc_tp_3r:,}원 (+{take_profit_3r_pct}%)</strong> &nbsp;|&nbsp; 
-            ⚡ 잔여수량: <strong>추세 추종 홀딩</strong>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    c_chart, c_act = st.columns([1, 1])
-    with c_chart:
-        if st.button("📈 차트보기", key=f"chart_{tab_prefix}_{row['종목코드']}_{row.name}", use_container_width=True):
-            show_chart_modal(row['종목코드'], row['종목명'])
-    with c_act:
-        unique_btn_key = f"btn_{tab_prefix}_{row['종목코드']}_{row.name}"
-        if st.button("➕ 감시 등록", key=unique_btn_key, use_container_width=True, type="primary"):
-            current_list = get_saved_watchlist()
-            current_list = [s for s in current_list if s["code"] != row["종목코드"]]
-            current_list.append({
-                "name": row['종목명'],
-                "code": str(row['종목코드']).zfill(6),
-                "buy_price": curr_p,
-                "current_price": curr_p,
-                "pnl_pct": 0.0,
-                "stop_price": calc_stop,
-                "stop_pct": -default_stop_pct,
-                "tp_price": calc_tp_3r,
-                "tp_pct": take_profit_3r_pct,
-                "theme": f"{sec_emoji} {sec_cat}",
-                "strategy": ",".join(row['매칭전략']),
-                "added_at": datetime.now().strftime("%Y-%m-%d %H:%M")
-            })
-            save_watchlist(current_list)
-            st.toast(f"✅ [{row['종목명']}] 3R 익절 {calc_tp_3r:,}원 / 손절 {calc_stop:,}원 등록 완료!")
-
-st.set_page_config(page_title="AI 트레이딩 코치 & 자율 트레이딩 센터", page_icon="📈", layout="wide")
-st.title("📈 AI 트레이딩 코치 & 자율 트레이딩 센터")
-
-saved_creds = load_saved_credentials()
-
-market_regime = NaverStockScreener.get_market_regime()
-with st.container(border=True):
-    r_col1, r_col2 = st.columns([1, 3])
-    with r_col1:
-        st.markdown(f"### {market_regime['badge']}")
-        st.caption(f"코스피: **{market_regime['kospi_close']}pt** ({market_regime['kospi_change_pct']:+}%)")
-    with r_col2:
-        st.markdown(f"💡 **시장 가이드**: {market_regime['desc']}")
-        st.markdown(f"🎯 **권장 비중 포트폴리오**: `{market_regime['alloc_guide']}`")
-
-with st.sidebar:
-    st.header("⚙️ 시스템 설정")
-    api_key = st.text_input("Gemini API Key", type="password", value=saved_creds["gemini_api_key"])
-    
-    st.divider()
-    st.header("📲 텔레그램 가디언 설정")
-    tg_token = st.text_input("Bot Token", type="password", value=saved_creds["tg_token"])
-    tg_chat_id = st.text_input("My Chat ID", value=saved_creds["tg_chat_id"])
-    
-    col_save, col_test = st.columns([1, 1])
-    with col_save:
-        if st.button("💾 영구 저장", use_container_width=True, type="primary"):
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump({
-                    "gemini_api_key": api_key.strip(),
-                    "tg_token": tg_token.strip(),
-                    "tg_chat_id": tg_chat_id.strip()
-                }, f, ensure_ascii=False, indent=2)
-            st.toast("✅ 설정값이 영구 저장되었습니다. 다음 접속 시 자동 로드됩니다!")
-            st.rerun()
-
-    with col_test:
-        if st.button("🔔 연결 테스트", use_container_width=True):
-            if tg_token and tg_chat_id:
-                notifier = TelegramNotifier(tg_token, tg_chat_id)
-                if notifier.send_message("✅ *AI 트레이딩 가디언과 텔레그램이 완벽히 연동되었습니다.*"):
-                    st.success("발송 성공!")
-                else:
-                    st.error("토큰/ID를 확인하세요.")
-            else:
-                st.warning("토큰과 ID를 입력하세요.")
-
-tab_screener, tab_monitor, tab_backtest, tab_briefing, tab_report = st.tabs([
-    "🎯 1. 퀀트 스크리너 (시총·거래 1000억↑)",
-    "📡 2. 감시 포트폴리오 & 리스크 온도계",
-    "🔬 3. 20년 팩트 백테스팅",
-    "📢 4. 4대 타임라인 텔레그램 브리핑",
-    "🧠 5. 매매복기 & AI 심층진단"
-])
-
-# -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너
-# -------------------------------------------------------------
-with tab_screener:
-    st.subheader("👑 전 종목 대상 완전 정배열(5>10>20>60>120) 최다 집중 섹터")
-    with st.spinner("코스피/코스닥 전체 업종 전수 스캔 및 120일 정배열 종목 집계 중..."):
-        sector_ranks = NaverStockScreener.get_sector_uptrend_summary()
-
-    if sector_ranks:
-        top_sec = sector_ranks[0]
-        st.info(f"🔥 현재 국내 증시에서 정배열 차트가 가장 많이 집중된 1위 업종은 **{top_sec['emoji']} {top_sec['sector']}** (정배열 종목 **{top_sec['uptrend_count']}개** / 정배열 비중 **{top_sec['uptrend_ratio']}%**) 입니다.")
-        
-        cols = st.columns(min(3, len(sector_ranks)))
-        for i, col in enumerate(cols):
-            sec = sector_ranks[i]
-            with col:
-                with st.container(border=True):
-                    st.markdown(f"#### {i+1}위. {sec['emoji']} {sec['sector']}")
-                    st.markdown(f"• **정배열 종목수**: `{sec['uptrend_count']} / {sec['total_count']}개` (*{sec['uptrend_ratio']}%*)")
-                    st.markdown(f"• **업종 평균 등락률**: `+{sec['change_rate']}%`")
-                    if sec['uptrend_stocks']:
-                        st.caption("📈 정배열 주도주: " + ", ".join(sec['uptrend_stocks'][:4]))
-    else:
-        st.warning("⚠️ 현재 전체 업종 중 5>10>20>60>120 대세 정배열을 유지 중인 업종이 없습니다. (시장 조정/관망 국면)")
-
-    st.divider()
-    st.subheader("🔥 시장 주도 테마 & 1,000억↑ 메이저 주도주")
-    c_btn, c_slider = st.columns([1, 2])
-    with c_btn:
-        run_scan = st.button("🔄 최신 시장 전 종목 스캔", use_container_width=True)
-    with c_slider:
-        default_stop_pct = st.slider("기본 손절선 설정 (%)", min_value=2.0, max_value=12.0, value=6.0, step=0.5)
-
-    if "selected_theme_filter" not in st.session_state:
-        st.session_state["selected_theme_filter"] = None
-
-    if run_scan or "multi_screener_df" not in st.session_state:
-        with st.spinner("시총 1000억 & 거래대금 1000억 이상 5대 전략 퀀트 분석 중..."):
-            themes_data, df_result = NaverStockScreener.run_multi_strategy_screen()
-            st.session_state["top_themes"] = themes_data
-            st.session_state["multi_screener_df"] = df_result
-
-    top_themes = st.session_state.get("top_themes", [])
-    all_df = st.session_state.get("multi_screener_df", pd.DataFrame())
-
-    if top_themes:
-        t_cols = st.columns(min(4, len(top_themes)))
-        for i, col in enumerate(t_cols):
-            theme = top_themes[i]
-            t_name = theme['theme_name']
-            is_active = st.session_state["selected_theme_filter"] == t_name
-            btn_style = "primary" if is_active else "secondary"
-            with col:
-                with st.container(border=True):
-                    st.markdown(f"**⚡ {t_name}** <span style='color:#e03131; font-weight:bold;'>+{theme['change_rate']}%</span>", unsafe_allow_html=True)
-                    st.markdown(f"👑 대장주: **{theme['leader']}**")
-                    if st.button(f"🔍 {t_name} 필터", key=f"theme_btn_{i}", use_container_width=True, type=btn_style):
-                        st.session_state["selected_theme_filter"] = None if is_active else t_name
-                        st.rerun()
-
-    st.divider()
-    active_theme = st.session_state.get("selected_theme_filter")
-    if active_theme:
-        target_theme_data = next((t for t in top_themes if t["theme_name"] == active_theme), None)
-        member_names = target_theme_data["member_stocks"] if target_theme_data else []
-        filtered_df = all_df[all_df["종목명"].isin(member_names)]
-        
-        c_head, c_clear = st.columns([4, 1])
-        c_head.subheader(f"🎯 [{active_theme}] 테마 주도주 ({len(filtered_df)}종목)")
-        if c_clear.button("❌ 필터 초기화", use_container_width=True):
-            st.session_state["selected_theme_filter"] = None
-            st.rerun()
-
-        if not filtered_df.empty:
-            cols = st.columns(2)
-            for idx, (_, r) in enumerate(filtered_df.iterrows()):
-                with cols[idx % 2]:
-                    render_stock_card(r, default_stop_pct, tab_prefix="theme_filtered")
-    else:
-        st.subheader("🎯 5대 정밀 트레이딩 전략별 주도주")
-        if not all_df.empty:
-            sub_all, sub_golden, sub_a, sub_b, sub_c, sub_d, sub_e = st.tabs([
-                f"🌐 전체 ({len(all_df)})",
-                f"🔥 다중일치 ({len(all_df[all_df['전략수'] >= 2])})",
-                "💎 A. 수급주도주", "🎯 B. 10일선 눌림", "🛡️ C. 20일선 눌림",
-                "🚀 D. 신고가 돌파", "🌱 E. 바닥 턴어라운드"
-            ])
-            def render_grid(df_subset, tab_prefix: str):
-                if df_subset.empty:
-                    st.info("조건을 만족하는 종목이 없습니다.")
-                    return
-                cols = st.columns(2)
-                for idx, (_, r) in enumerate(df_subset.iterrows()):
-                    with cols[idx % 2]:
-                        render_stock_card(r, default_stop_pct, tab_prefix=tab_prefix)
-
-            with sub_all: render_grid(all_df, "all")
-            with sub_golden: render_grid(all_df[all_df['전략수'] >= 2], "golden")
-            with sub_a: render_grid(all_df[all_df['매칭전략'].apply(lambda x: 'A' in x)], "strat_a")
-            with sub_b: render_grid(all_df[all_df['매칭전략'].apply(lambda x: 'B' in x)], "strat_b")
-            with sub_c: render_grid(all_df[all_df['매칭전략'].apply(lambda x: 'C' in x)], "strat_c")
-            with sub_d: render_grid(all_df[all_df['매칭전략'].apply(lambda x: 'D' in x)], "strat_d")
-            with sub_e: render_grid(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
-
-# -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오 & 리스크 온도계
-# -------------------------------------------------------------
-with tab_monitor:
-    st.subheader("📡 실시간 보유/감시 종목 리스크 온도계")
-    current_list = get_saved_watchlist()
-    if not current_list:
-        st.info("현재 감시 중인 종목이 없습니다. 1번 탭에서 유망 종목을 등록하세요.")
-    else:
-        for item in current_list:
-            buy_p = item['buy_price']
-            curr_p = item.get('current_price', buy_p)
-            pnl_pct = item.get('pnl_pct', 0.0)
-            stop_p = item['stop_price']
-            tp_p = item.get('tp_price', int(buy_p * 1.18))
-
-            if curr_p <= stop_p:
-                status_badge = "🛑 **[손절 발동 상태]**"
-            elif curr_p <= stop_p * 1.015:
-                status_badge = "⚠️ **[손절 임박 주의!]**"
-            elif pnl_pct > 0:
-                status_badge = "🟢 **[수익 순항 중]**"
-            else:
-                status_badge = "🔵 **[보통]**"
-
-            with st.container(border=True):
-                c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-                with c1:
-                    st.markdown(f"### {item['name']} <small style='color:#888;'>({item['code']})</small>", unsafe_allow_html=True)
-                    st.caption(f"매수가: {buy_p:,}원 ➡️ 현재가: **{curr_p:,}원**")
-                with c2:
-                    pnl_color = "#e03131" if pnl_pct > 0 else "#1971c2"
-                    st.markdown(f"평가손익: <span style='font-size:20px; font-weight:bold; color:{pnl_color};'>{pnl_pct:+0.2f}%</span>", unsafe_allow_html=True)
-                    st.markdown(status_badge)
-                with c3:
-                    st.caption(f"🛑 손절선: `{stop_p:,}원` ({item.get('stop_pct', -6)}%)")
-                    st.caption(f"🎯 3R 50%익절선: `{tp_p:,}원` (+{item.get('tp_pct', 18)}%)")
-                with c4:
-                    if st.button("🗑️ 삭제", key=f"del_{item['code']}", use_container_width=True):
-                        current_list = [s for s in current_list if s["code"] != item["code"]]
-                        save_watchlist(current_list)
-                        st.toast(f"{item['name']} 삭제 완료")
-                        st.rerun()
-
-# -------------------------------------------------------------
-# TAB 3: 20년 팩트 백테스팅
-# -------------------------------------------------------------
-with tab_backtest:
-    st.subheader("🔬 5대 정밀 진입 전략 & 추세 추종 청산 팩트 백테스팅")
-
-    PRESET_STOCKS = {
-        "SK하이닉스 (000660)": "000660", "삼성전자 (005930)": "005930",
-        "현대무벡스 (319400)": "319400", "한화오션 (042660)": "042660",
-        "실리콘투 (257720)": "257720", "두산에너빌리티 (034020)": "034020",
-        "대한항공 (003490)": "003490", "코오롱티슈진 (950160)": "950160",
-        "직접 종목코드 입력": "CUSTOM"
+    # Streamlit Secrets 호환
+    return {
+        "GEMINI_API_KEY": st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", "")),
+        "TELEGRAM_BOT_TOKEN": st.secrets.get("TELEGRAM_BOT_TOKEN", os.environ.get("TELEGRAM_BOT_TOKEN", "")),
+        "TELEGRAM_CHAT_ID": st.secrets.get("TELEGRAM_CHAT_ID", os.environ.get("TELEGRAM_CHAT_ID", ""))
     }
 
-    col_target, col_strat = st.columns([1, 1])
-    with col_target:
-        sel_preset = st.selectbox("검증할 종목 선택", list(PRESET_STOCKS.keys()))
-        if sel_preset == "직접 종목코드 입력":
-            target_code = st.text_input("종목코드 6자리 입력", value="005930")
-            target_name = f"종목({target_code})"
+def save_config(cfg):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=4)
+
+config = load_config()
+
+# -------------------------------------------------------------
+# 3. 사이드바 (모바일 설정창)
+# -------------------------------------------------------------
+with st.sidebar:
+    st.markdown("### ⚙️ 시스템 설정")
+    gemini_key = st.text_input("Gemini API Key", value=config.get("GEMINI_API_KEY", ""), type="password")
+    tg_token = st.text_input("Telegram Bot Token", value=config.get("TELEGRAM_BOT_TOKEN", ""), type="password")
+    tg_chat_id = st.text_input("Telegram Chat ID", value=config.get("TELEGRAM_CHAT_ID", ""))
+    
+    if st.button("💾 설정 영구 저장", use_container_width=True):
+        config_data = {
+            "GEMINI_API_KEY": gemini_key,
+            "TELEGRAM_BOT_TOKEN": tg_token,
+            "TELEGRAM_CHAT_ID": tg_chat_id
+        }
+        save_config(config_data)
+        st.success("설정이 저장되었습니다.")
+        
+    if st.button("🔔 텔레그램 연결 테스트", use_container_width=True):
+        if tg_token and tg_chat_id:
+            bot = TelegramNotifier(bot_token=tg_token, chat_id=tg_chat_id)
+            ok = bot.send_message("📱 모바일 트레이딩 코치 연결 테스트 완료!")
+            if ok:
+                st.success("메시지 발송 성공!")
+            else:
+                st.error("발송 실패. 토큰/Chat ID를 확인하세요.")
         else:
-            target_code = PRESET_STOCKS[sel_preset]
-            target_name = sel_preset.split(" ")[0]
+            st.warning("토큰과 Chat ID를 입력하세요.")
 
-    with col_strat:
-        sel_strat_type = st.selectbox("검증할 진입 전략", ["A", "B", "C", "D", "E"],
-                                      format_func=lambda x: NaverStockScreener.STRATEGIES[x]["name"])
+# -------------------------------------------------------------
+# 4. 상단 모바일 네비게이션 및 타이틀
+# -------------------------------------------------------------
+st.markdown('<div class="main-title">📈 AI 트레이딩 코치 & 자율 센터</div>', unsafe_allow_html=True)
 
-    col_exit, col_period, col_stop, col_trailing = st.columns([2, 1, 1, 1])
-    with col_exit:
-        sel_exit_rule = st.selectbox("청산(익절/추세) 전략", [
-            ("3R_TRAILING", "🏆 1. 3R 50%익절 + 잔여 트레일링스탑 (추세추종)"),
-            ("SR_RETEST", "🔁 2. 저항선 50%익절 + 지지 리테스트 재진입 (스윙)"),
-            ("MA5_EXIT", "⚡ 3. 5일선 종가 하향 이탈 청산"),
-            ("MA10_EXIT", "🎯 4. 10일선 종가 하향 이탈 청산"),
-            ("MA20_EXIT", "🛡️ 5. 20일 생명선 종가 하향 이탈 청산")
-        ], format_func=lambda x: x[1])[0]
+# 시장 진단 카드 (컴팩트 뷰)
+screener = MarketScreener()
+with st.spinner("시장 데이터 로딩 중..."):
+    market_status = screener.get_market_regime()
 
-    with col_period:
-        period_days = st.selectbox("검증 기간", [250, 500, 1250, 2500, 5000], index=4,
-                                   format_func=lambda x: {
-                                       250: "📅 최근 1년 (약 250거래일)",
-                                       500: "📅 최근 2년 (약 500거래일)",
-                                       1250: "📅 최근 5년 (약 1,250거래일)",
-                                       2500: "🏛️ 최근 10년 (약 2,500거래일)",
-                                       5000: "🏛️ 최근 20년 (약 5,000거래일)"
-                                   }[x])
+regime_color = "#eab308" if "박스권" in market_status['regime'] else ("#22c55e" if "상승" in market_status['regime'] else "#ef4444")
 
-    with col_stop:
-        bt_stop = st.number_input("설정 손절선 (%)", min_value=2.0, max_value=15.0, value=6.0, step=0.5)
+st.markdown(f"""
+<div style="background:#f8fafc; border-left: 4px solid {regime_color}; border-radius:8px; padding:10px 12px; margin-bottom:12px;">
+    <div style="font-weight:700; font-size:1.05rem; margin-bottom:3px;">
+        {market_status['regime']}
+    </div>
+    <div style="font-size:0.82rem; color:#64748b; margin-bottom:4px;">
+        코스피: <b>{market_status['kospi_price']:,.2f}pt</b> ({market_status['kospi_change']:+.2f}%)
+    </div>
+    <div style="font-size:0.85rem; color:#334155; line-height:1.4;">
+        💡 <b>가이드:</b> {market_status['strategy_guide']}<br>
+        🎯 <b>권장 비중:</b> {market_status['recommended_portfolio']}
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-    with col_trailing:
-        bt_trailing_pct = st.number_input("트레일링 스탑 (%)", min_value=2.0, max_value=20.0, value=5.0, step=0.5)
+# 모바일 친화적 메뉴 선택기 (가로 탭 대체)
+menu = st.selectbox(
+    "메뉴 이동",
+    [
+        "👑 1. 주도 섹터 & 정배열 퀀트",
+        "📢 2. 텔레그램 4대 브리핑",
+        "🎯 3. 손절선 자율 감시 가디언",
+        "📊 4. 매매일지 AI 복기 코칭"
+    ],
+    label_visibility="collapsed"
+)
 
-    st.write("")
-    run_real_bt = st.button("🚀 실제 캔들 팩트 백테스팅 실행", use_container_width=True, type="primary")
+# -------------------------------------------------------------
+# 메뉴 1: 주도 섹터 & 정배열 퀀트 스크리너
+# -------------------------------------------------------------
+if "1. 주도 섹터" in menu:
+    st.markdown("#### 👑 완전 정배열 집중 섹터 TOP")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        refresh = st.button("🔄 실시간 스캔", use_container_width=True)
+    with col_btn2:
+        scan_mode = st.selectbox("시장 선택", ["코스피 + 코스닥", "코스피", "코스닥"], label_visibility="collapsed")
+        
+    with st.spinner("전 종목 정배열 스크리닝 중..."):
+        top_sectors = screener.get_top_aligned_sectors(limit=5)
+        
+    if top_sectors:
+        for idx, sec in enumerate(top_sectors):
+            with st.expander(f"🔥 {idx+1}위: {sec['sector_name']} ({len(sec['stocks'])}개 종목 정배열)", expanded=(idx==0)):
+                for stk in sec['stocks']:
+                    c1, c2, c3 = st.columns([2, 1.5, 1])
+                    c1.markdown(f"**{stk['name']}**<br><span style='font-size:0.75rem; color:gray;'>{stk['code']}</span>", unsafe_allow_html=True)
+                    c2.markdown(f"**{stk['price']:,}원**<br><span style='font-size:0.75rem; color:{'red' if stk['change_rate']>0 else 'blue'};'>{stk['change_rate']:+.2f}%</span>", unsafe_allow_html=True)
+                    if c3.button("차트", key=f"btn_{stk['code']}"):
+                        st.image(f"https://ssl.pstatic.net/imgfinance/chart/item/area/day/{stk['code']}.png", use_column_width=True)
+    else:
+        st.info("현재 시장에서 완전 정배열 조건을 만족하는 섹터를 집계 중입니다.")
 
-    if run_real_bt or "real_bt_result" not in st.session_state:
-        with st.spinner(f"[{target_name}] 과거 {period_days}거래일 20년 수정주가 데이터 수집 및 백테스팅 중..."):
-            st.session_state["real_bt_result"] = NaverStockScreener.run_real_stock_backtest(
-                code=target_code,
-                stock_name=target_name,
-                stop_loss_pct=bt_stop,
-                strategy_type=sel_strat_type,
-                exit_rule=sel_exit_rule,
-                trailing_stop_pct=bt_trailing_pct,
-                target_days=period_days
-            )
+# -------------------------------------------------------------
+# 메뉴 2: 텔레그램 4대 브리핑 센터
+# -------------------------------------------------------------
+elif "2. 텔레그램" in menu:
+    st.markdown("#### 📢 시간대별 텔레그램 브리핑")
+    st.caption("스마트폰으로 원하는 시점의 시장 분석을 즉시 받아보세요.")
+    
+    bot_token = config.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = config.get("TELEGRAM_CHAT_ID", "")
+    bot = TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🌅 08:00 개장전 전략", use_container_width=True):
+            with st.spinner("브리핑 생성 및 전송 중..."):
+                msg = screener.generate_briefing_0800()
+                ok = bot.send_message(msg)
+                if ok: st.success("08:00 브리핑 전송 완료!")
+                else: st.error("전송 실패 (토큰 확인)")
+                
+        if st.button("🔔 08:50 장전 주도주", use_container_width=True):
+            with st.spinner("브리핑 생성 및 전송 중..."):
+                msg = screener.generate_briefing_0850()
+                ok = bot.send_message(msg)
+                if ok: st.success("08:50 브리핑 전송 완료!")
+                else: st.error("전송 실패 (토큰 확인)")
+                
+    with c2:
+        if st.button("🚀 09:30 거래대금 폭발", use_container_width=True):
+            with st.spinner("브리핑 생성 및 전송 중..."):
+                msg = screener.generate_briefing_0930()
+                ok = bot.send_message(msg)
+                if ok: st.success("09:30 브리핑 전송 완료!")
+                else: st.error("전송 실패 (토큰 확인)")
+                
+        if st.button("🎯 10:00 오전장 확정", use_container_width=True):
+            with st.spinner("브리핑 생성 및 전송 중..."):
+                msg = screener.generate_briefing_1000()
+                ok = bot.send_message(msg)
+                if ok: st.success("10:00 브리핑 전송 완료!")
+                else: st.error("전송 실패 (토큰 확인)")
 
-    bt_res = st.session_state.get("real_bt_result", {})
-
-    if "error" in bt_res:
-        st.error(bt_res["error"])
-    elif bt_res:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("검증 전략/종목", f"{bt_res['stock_name']}", f"{bt_res['strategy_name']}")
-        m2.metric("최종 누적 손익", f"{bt_res['final_capital']:,}원", f"{bt_res['total_pnl']:+,}원 ({bt_res['total_return_pct']:+0.1f}%)")
-        m3.metric("실제 매매 승률", f"{bt_res['win_rate_pct']}%")
-        m4.metric("총 체결 횟수", f"{bt_res['total_trades']}회", f"승 {bt_res['wins_count']} / 패 {bt_res['losses_count']}")
-
-        st.markdown("#### 📈 계좌 자산 성장 곡선 (실제 체결 기준)")
-        st.line_chart(pd.DataFrame({"자산 잔고 (원)": bt_res["equity_curve"]}))
-
-        st.markdown("#### 📋 실제 매매 체결 내역 상세 로그 (Fact Log)")
-        df_log = bt_res["trades_log"]
-        if not df_log.empty:
-            def style_trades(val):
-                if isinstance(val, str):
-                    if val.startswith("+"):
-                        return "color: #e03131; font-weight: bold;"
-                    elif val.startswith("-"):
-                        return "color: #1971c2; font-weight: bold;"
-                return ""
-
+# -------------------------------------------------------------
+# 메뉴 3: 손절선 자율 감시 가디언
+# -------------------------------------------------------------
+elif "3. 손절선" in menu:
+    st.markdown("#### 🎯 실시간 손절선 가디언")
+    
+    WATCHLIST_FILE = "watchlist.json"
+    def load_watchlist():
+        if os.path.exists(WATCHLIST_FILE):
             try:
-                styled_df = df_log.style.map(style_trades, subset=["수익률", "손익금"])
-            except AttributeError:
-                styled_df = df_log.style.applymap(style_trades, subset=["수익률", "손익금"])
+                with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return []
+        return []
 
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("해당 기간 동안 선택한 진입 전략 조건을 만족한 타점이 없습니다.")
+    def save_watchlist(wl):
+        with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(wl, f, ensure_ascii=False, indent=4)
 
-# -------------------------------------------------------------
-# TAB 4: 4대 타임라인 텔레그램 브리핑 센터
-# -------------------------------------------------------------
-with tab_briefing:
-    st.subheader("📢 시간대별 4대 텔레그램 브리핑 센터")
-    st.markdown("`watcher.py`가 실행 중이면 아래 4대 브리핑이 **해당 시간에 스마트폰으로 자동 전송**됩니다.")
+    watchlist = load_watchlist()
 
-    col_b1, col_b2 = st.columns(2)
-    with col_b1:
-        with st.container(border=True):
-            st.markdown("#### 🌐 08:00 글로벌 매크로 & 뉴욕증시")
-            st.caption("미 3대 지수, 유가, 환율, 국채금리 및 국장 영향 분석")
-            if st.button("📢 08:00 브리핑 즉시 발송", use_container_width=True):
-                if tg_token and tg_chat_id:
-                    msg = NaverStockScreener.generate_0800_global_briefing()
-                    TelegramNotifier(tg_token, tg_chat_id).send_message(msg)
-                    st.success("발송 완료!")
-                    st.markdown(msg)
-                else:
-                    st.warning("사이드바에서 텔레그램 설정을 입력하고 [영구 저장]을 눌러주세요.")
+    # 등록 폼 (모바일 맞춤 1열/2열 구성)
+    with st.expander("➕ 감시 종목 추가하기", expanded=True):
+        stk_name = st.text_input("종목명", placeholder="예: 삼성전자")
+        stk_code = st.text_input("종목코드 (6자리)", placeholder="예: 005930")
+        c1, c2 = st.columns(2)
+        with c1:
+            buy_price = st.number_input("매수가(원)", value=0, step=500)
+        with c2:
+            stop_price = st.number_input("손절선(원)", value=0, step=500)
+            
+        if st.button("가디언 감시 등록", use_container_width=True):
+            if stk_name and stk_code and stop_price > 0:
+                watchlist.append({
+                    "name": stk_name,
+                    "code": stk_code,
+                    "buy_price": buy_price,
+                    "stop_loss": stop_price,
+                    "reg_date": datetime.now().strftime("%m-%d %H:%M")
+                })
+                save_watchlist(watchlist)
+                st.success(f"[{stk_name}] 감시 등록 완료!")
+                st.rerun()
+            else:
+                st.warning("종목명, 코드, 손절가를 모두 입력해주세요.")
 
-        with st.container(border=True):
-            st.markdown("#### ⚡ 09:30 장초반 주도섹터 & 자금 쏠림")
-            st.caption("개장 30분 거래대금 쏠림 TOP 3 섹터 & 1등 대장주")
-            if st.button("📢 09:30 브리핑 즉시 발송", use_container_width=True):
-                if tg_token and tg_chat_id:
-                    msg = NaverStockScreener.generate_intraday_leader_briefing("09:30")
-                    TelegramNotifier(tg_token, tg_chat_id).send_message(msg)
-                    st.success("발송 완료!")
-                    st.markdown(msg)
-                else:
-                    st.warning("사이드바에서 텔레그램 설정을 입력하고 [영구 저장]을 눌러주세요.")
-
-    with col_b2:
-        with st.container(border=True):
-            st.markdown("#### 🌅 08:50 프리마켓 & NXT 테마/골든픽")
-            st.caption("시장 국면 신호등, NXT 주도 테마 & 5대 전략 골든픽 TOP 3")
-            if st.button("📢 08:50 브리핑 즉시 발송", use_container_width=True):
-                if tg_token and tg_chat_id:
-                    msg = NaverStockScreener.generate_0850_nxt_briefing()
-                    TelegramNotifier(tg_token, tg_chat_id).send_message(msg)
-                    st.success("발송 완료!")
-                    st.markdown(msg)
-                else:
-                    st.warning("사이드바에서 텔레그램 설정을 입력하고 [영구 저장]을 눌러주세요.")
-
-        with st.container(border=True):
-            st.markdown("#### 🔥 10:00 장중 확정 주도주 & 자금 집중")
-            st.caption("오전장 거래대금 수천억 집중 확정 주도주 & 눌림목 타점")
-            if st.button("📢 10:00 브리핑 즉시 발송", use_container_width=True):
-                if tg_token and tg_chat_id:
-                    msg = NaverStockScreener.generate_intraday_leader_briefing("10:00")
-                    TelegramNotifier(tg_token, tg_chat_id).send_message(msg)
-                    st.success("발송 완료!")
-                    st.markdown(msg)
-                else:
-                    st.warning("사이드바에서 텔레그램 설정을 입력하고 [영구 저장]을 눌러주세요.")
+    if watchlist:
+        st.markdown(f"**현재 감시 중인 종목 ({len(watchlist)}개)**")
+        for i, item in enumerate(watchlist):
+            c1, c2 = st.columns([3, 1])
+            c1.markdown(f"**{item['name']}** ({item['code']})<br>매수가: {item['buy_price']:,}원 | <span style='color:red;'>손절가: {item['stop_loss']:,}원</span>", unsafe_allow_html=True)
+            if c2.button("삭제", key=f"del_{i}", use_container_width=True):
+                watchlist.pop(i)
+                save_watchlist(watchlist)
+                st.rerun()
+    else:
+        st.info("등록된 감시 종목이 없습니다.")
 
 # -------------------------------------------------------------
-# TAB 5: 매매복기 & AI 심층진단
+# 메뉴 4: 매매일지 AI 복기 코칭
 # -------------------------------------------------------------
-with tab_report:
-    st.subheader("📊 삼성증권 체결 엑셀 기반 AI 습관 진단")
-    uploaded_file = st.file_uploader("📂 체결내역 엑셀 파일(.xlsx) 업로드", type=["xlsx", "xls"])
-    if uploaded_file is not None:
-        df = SamsungSecuritiesParser.load_and_normalize(uploaded_file)
-        trades = TradeFIFOEngine.process_trades(df)
-        metrics = TradingMetricsAnalyzer.generate_summary(trades)
-
-        ov = metrics.get("overview", {})
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("총 매매수", f"{ov.get('total_matched_trades', 0)} 건")
-        c2.metric("승률", ov.get('win_rate', '0%'))
-        c3.metric("손익비", ov.get('risk_reward_ratio', 0))
-        c4.metric("실현손익", ov.get('total_net_pnl', '0원'))
-
-        if api_key:
-            client = genai.Client(api_key=api_key)
-            prompt = f"다음 통계를 바탕으로 매매 약점과 개선규칙 3가지를 제시하세요:\n{json.dumps(metrics, ensure_ascii=False)}"
-            res = client.models.generate_content(model=get_best_available_model(), contents=prompt)
-            st.markdown(res.text)
+elif "4. 매매일지" in menu:
+    st.markdown("#### 📊 삼성증권 매매일지 AI 코칭")
+    
+    uploaded_file = st.file_uploader("삼성증권 거래내역 엑셀(.xlsx) 업로드", type=["xlsx", "xls"])
+    
+    if uploaded_file:
+        try:
+            parser = SamsungSecuritiesParser(uploaded_file)
+            raw_trades = parser.parse()
+            engine = TradeFIFOEngine()
+            completed_trades = engine.process(raw_trades)
+            analyzer = TradingMetricsAnalyzer(completed_trades)
+            metrics = analyzer.calculate()
+            
+            c1, c2 = st.columns(2)
+            c1.metric("총 실현손익", f"{metrics['total_pnl']:,}원")
+            c2.metric("승률", f"{metrics['win_rate']:.1f}%")
+            
+            if st.button("🤖 Gemini AI 복기 진단 받기", use_container_width=True):
+                g_key = config.get("GEMINI_API_KEY", "")
+                if g_key:
+                    with st.spinner("AI가 매매 패턴을 정밀 분석 중입니다..."):
+                        coach = GeminiTradeCoach(api_key=g_key)
+                        feedback = coach.generate_feedback(metrics)
+                        st.markdown("---")
+                        st.markdown(feedback)
+                else:
+                    st.warning("사이드바에서 Gemini API 키를 먼저 입력해주세요.")
+        except Exception as e:
+            st.error(f"엑셀 분석 중 오류: {str(e)}")
