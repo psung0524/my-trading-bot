@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import os
 import requests
+import urllib.parse
 from bs4 import BeautifulSoup
 from pathlib import Path
 from datetime import datetime
@@ -177,7 +178,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 헬퍼 함수 & 검색/시세 엔진
+# 3. 헬퍼 함수 & 네이버 테마/시세 수집 엔진
 # -------------------------------------------------------------
 def load_saved_credentials():
     creds = {
@@ -241,14 +242,13 @@ def load_all_krx_stocks():
 
     backup_list = [
         {"name": "삼성전자", "code": "005930"}, {"name": "SK하이닉스", "code": "000660"},
+        {"name": "STX그린로지스", "code": "465770"}, {"name": "흥아해운", "code": "003280"},
+        {"name": "대한해운", "code": "005880"}, {"name": "HMM", "code": "011200"},
+        {"name": "팬오션", "code": "028670"}, {"name": "KSS해운", "code": "044450"},
         {"name": "펩트론", "code": "087010"}, {"name": "삼천당제약", "code": "000250"},
         {"name": "에코프로", "code": "086520"}, {"name": "에코프로비엠", "code": "247540"},
         {"name": "알테오젠", "code": "196170"}, {"name": "리가켐바이오", "code": "141080"},
-        {"name": "HLB", "code": "028300"}, {"name": "현대차", "code": "005380"},
-        {"name": "기아", "code": "000270"}, {"name": "두산에너빌리티", "code": "034020"},
-        {"name": "한화오션", "code": "042660"}, {"name": "한화에어로스페이스", "code": "012450"},
-        {"name": "현대무벡스", "code": "319400"}, {"name": "실리콘투", "code": "257720"},
-        {"name": "대한항공", "code": "003490"}, {"name": "셀트리온", "code": "068270"}
+        {"name": "HLB", "code": "028300"}, {"name": "현대차", "code": "005380"}
     ]
     
     seen = set()
@@ -272,6 +272,65 @@ def search_stock_by_name(keyword: str):
     matched = [s for s in master if kw in s['name'].lower() or kw in s['code']]
     matched.sort(key=lambda x: (not x['name'].lower().startswith(kw), len(x['name'])))
     return matched[:10]
+
+@st.cache_data(ttl=60)
+def fetch_theme_stocks(theme_no: str, theme_name: str):
+    """네이버 테마 상세 페이지의 전체 관련 종목 크롤링"""
+    stocks = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    try:
+        url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
+        res = requests.get(url, headers=headers, timeout=4)
+        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+        
+        rows = soup.select("table.type_5 tr")
+        for row in rows:
+            name_tag = row.select_one("td.name a")
+            if not name_tag:
+                continue
+            name = name_tag.text.strip()
+            code = name_tag['href'].split('code=')[-1].strip()
+            
+            tds = row.select("td")
+            if len(tds) < 8:
+                continue
+                
+            curr_str = tds[1].text.strip().replace(",", "")
+            curr_p = int(curr_str) if curr_str.isdigit() else 0
+            
+            chg_str = tds[3].text.strip().replace("%", "").replace("+", "").strip()
+            try:
+                chg_rate = float(chg_str)
+            except Exception:
+                chg_rate = 0.0
+                
+            vol_str = tds[6].text.strip().replace(",", "")
+            vol = int(vol_str) if vol_str.isdigit() else 0
+            
+            # 거래대금 추정 (현재가 * 거래량 / 1억)
+            amount_eok = round((curr_p * vol) / 100000000, 1)
+            
+            stocks.append({
+                "종목명": name,
+                "종목코드": code,
+                "현재가": curr_p,
+                "등락률(%)": chg_rate,
+                "거래대금(억원)": amount_eok,
+                "전략수": 0,
+                "매칭전략": ["THEME"],
+                "시가총액(억원)": 0,
+                "섹터정보": {
+                    "category": theme_name,
+                    "raw_industry": theme_name,
+                    "emoji": "🌊" if "해운" in theme_name else "🔥",
+                    "bg": "#e0f2fe" if "해운" in theme_name else "#fef3c7",
+                    "color": "#0369a1" if "해운" in theme_name else "#b45309"
+                }
+            })
+    except Exception:
+        pass
+        
+    return stocks
 
 def fetch_realtime_price(code: str):
     try:
@@ -307,14 +366,17 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
     calc_tp_3r = int(curr_p * (1 + (take_profit_3r_pct / 100)))
 
     formatted_money = format_korean_money(row['거래대금(억원)'])
-    is_golden = row['전략수'] >= 2
+    is_golden = row.get('전략수', 0) >= 2
     card_class = "golden-card" if is_golden else "toss-card"
     golden_badge = "<span class='badge-span' style='background-color:#f59e0b; color:#ffffff;'>🔥 다중일치</span> " if is_golden else ""
 
     strat_badges = ""
-    for s_code in row['매칭전략']:
-        info = NaverStockScreener.STRATEGIES.get(s_code, {})
-        strat_badges += f"<span class='badge-span' style='background-color:#334155; color:#ffffff;'>{info.get('badge', s_code)}</span>"
+    for s_code in row.get('매칭전략', []):
+        if s_code == "THEME":
+            strat_badges += f"<span class='badge-span' style='background-color:#2563eb; color:#ffffff;'>테마주도</span>"
+        else:
+            info = NaverStockScreener.STRATEGIES.get(s_code, {})
+            strat_badges += f"<span class='badge-span' style='background-color:#334155; color:#ffffff;'>{info.get('badge', s_code)}</span>"
 
     sec = row.get('섹터정보', {})
     sec_cat = sec.get('category', '주도주')
@@ -347,10 +409,10 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
 
     c_chart, c_act = st.columns([1, 1])
     with c_chart:
-        if st.button("📈 차트보기", key=f"chart_{tab_prefix}_{row['종목코드']}_{row.name}", use_container_width=True):
+        if st.button("📈 차트보기", key=f"chart_{tab_prefix}_{row['종목코드']}_{row.name if hasattr(row, 'name') else row['종목코드']}", use_container_width=True):
             show_chart_modal(row['종목코드'], row['종목명'])
     with c_act:
-        unique_btn_key = f"btn_{tab_prefix}_{row['종목코드']}_{row.name}"
+        unique_btn_key = f"btn_{tab_prefix}_{row['종목코드']}_{row.name if hasattr(row, 'name') else row['종목코드']}"
         if st.button("➕ 감시 등록", key=unique_btn_key, use_container_width=True, type="primary"):
             current_list = get_saved_watchlist()
             current_list = [s for s in current_list if s["code"] != row["종목코드"]]
@@ -366,7 +428,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
                 "tp_pct": take_profit_3r_pct,
                 "last_notified_tier": 0,
                 "theme": f"{sec_emoji} {sec_cat}",
-                "strategy": ",".join(row['매칭전략']),
+                "strategy": ",".join(row.get('매칭전략', ['THEME'])),
                 "added_at": datetime.now().strftime("%Y-%m-%d %H:%M")
             })
             save_watchlist(current_list)
@@ -469,7 +531,7 @@ if active_tab == "screener":
     all_df = st.session_state.get("multi_screener_df", pd.DataFrame())
 
     if top_themes:
-        st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#334155; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#334155; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP (클릭 시 전 종목 보기)</div>", unsafe_allow_html=True)
         
         # 2x2 컴팩트 그리드
         t_row1_c1, t_row1_c2 = st.columns(2)
@@ -490,24 +552,45 @@ if active_tab == "screener":
                     help=f"대장주: {theme['leader']}"
                 ):
                     st.session_state["selected_theme_filter"] = None if is_active else t_name
+                    st.session_state["selected_theme_no"] = theme.get('theme_no', '')
                     st.rerun()
 
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
     active_theme = st.session_state.get("selected_theme_filter")
+    
+    # 🚀 테마 선택 시: 해당 테마의 모든 관련 종목을 실시간 수집 및 등락률/거래대금 순 정렬
     if active_theme:
         target_theme_data = next((t for t in top_themes if t["theme_name"] == active_theme), None)
-        member_names = target_theme_data["member_stocks"] if target_theme_data else []
-        filtered_df = all_df[all_df["종목명"].isin(member_names)]
+        theme_no = target_theme_data.get('theme_no', '') if target_theme_data else ''
         
+        with st.spinner(f"[{active_theme}] 테마의 모든 관련주 시세 수집 중..."):
+            theme_stocks = fetch_theme_stocks(theme_no, active_theme) if theme_no else []
+            
         c_head, c_clear = st.columns([3, 1])
-        c_head.markdown(f"##### 🎯 [{active_theme}] 주도주 ({len(filtered_df)}종목)")
-        if c_clear.button("❌ 초기화", use_container_width=True):
+        c_head.markdown(f"##### 🎯 [{active_theme}] 전체 관련주 ({len(theme_stocks)}종목)")
+        if c_clear.button("❌ 전체보기", use_container_width=True):
             st.session_state["selected_theme_filter"] = None
             st.rerun()
 
-        if not filtered_df.empty:
-            for _, r in filtered_df.iterrows():
-                render_stock_card(r, default_stop_pct, tab_prefix="theme_filtered")
+        if theme_stocks:
+            # 정렬 옵션 (상승률순 vs 거래대금순)
+            sort_opt = st.radio(
+                "정렬 기준",
+                ["📈 상승률 높은순", "💰 거래대금 많은순"],
+                horizontal=True,
+                label_visibility="collapsed"
+            )
+            
+            df_theme = pd.DataFrame(theme_stocks)
+            if "상승률" in sort_opt:
+                df_theme = df_theme.sort_values(by="등락률(%)", ascending=False)
+            else:
+                df_theme = df_theme.sort_values(by="거래대금(억원)", ascending=False)
+
+            for _, r in df_theme.iterrows():
+                render_stock_card(r, default_stop_pct, tab_prefix="theme_all")
+        else:
+            st.info(f"[{active_theme}] 테마에 등록된 관련주 데이터를 가져오는 중입니다.")
     else:
         st.markdown("##### 🎯 5대 정밀 트레이딩 전략별 주도주")
         if not all_df.empty:
