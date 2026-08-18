@@ -274,7 +274,7 @@ def save_watchlist(user_id: str, watchlist):
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
 # -------------------------------------------------------------
-# 4. 캐싱 & 시세 조회 엔진
+# 4. 캐싱 & 시세 조회 엔진 (💡 명확한 로딩 스피너 적용)
 # -------------------------------------------------------------
 @st.cache_data(ttl=180, show_spinner=False)
 def get_cached_screener_data():
@@ -480,7 +480,6 @@ def show_chart_modal(code: str, name: str):
 
 def render_stock_card(row, tab_prefix: str = "all"):
     curr_p = int(row['현재가'])
-    # 손절선 고정 -6%, 익절선 +18% (3R)
     calc_stop = int(curr_p * 0.94)
     calc_tp_3r = int(curr_p * 1.18)
 
@@ -592,12 +591,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (손절선 슬라이더 삭제 완료)
+# TAB 1: 퀀트 스크리너 (💡 명확한 로딩 스피너 적용)
 # -------------------------------------------------------------
 if active_tab == "screener":
     st.markdown("#### 🔥 주도 테마 & 300억↑ 메이저 주도주")
     
-    # 💡 손절선 슬라이더를 완전히 제거하고 스캔 버튼을 단독 배치하여 깔끔하게 정돈
     c_btn, c_empty = st.columns([1, 1])
     with c_btn:
         run_scan = st.button("🔄 실시간 재스캔", use_container_width=True)
@@ -609,7 +607,10 @@ if active_tab == "screener":
         st.cache_data.clear()
         st.rerun()
 
-    themes_data, all_df = get_cached_screener_data()
+    # 💡 멈춘 것처럼 보이지 않도록 로딩 스피너 배치
+    with st.spinner("⏳ 실시간 시장 주도주 및 5대 전략 스캐닝 중... (잠시만 기다려주세요)"):
+        themes_data, all_df = get_cached_screener_data()
+    
     top_themes = themes_data
 
     if top_themes:
