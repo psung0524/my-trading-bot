@@ -21,7 +21,7 @@ ENV_FILE = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. 다중 사용자 식별 및 토스증권 스타일 UI CSS
+# 1. 토스증권 스타일 UI & 반응형 CSS
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
@@ -33,7 +33,6 @@ st.set_page_config(
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
 
-# 사용자 ID 감지 (URL 파라미터 ?user=xxx 또는 기본 default)
 url_user = query_params.get("user", "").strip()
 if "current_user" not in st.session_state:
     st.session_state["current_user"] = url_user if url_user else "default"
@@ -51,7 +50,7 @@ st.markdown("""
     }
     
     .block-container {
-        max-width: 600px !important;
+        max-width: 620px !important;
         margin: 0 auto !important;
         padding-top: 54px !important;
         padding-bottom: 3.5rem !important;
@@ -157,7 +156,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 2. 상단 고정 네비게이션 바 (사용자 ID 파라미터 보존)
+# 2. 상단 고정 네비게이션 바
 # -------------------------------------------------------------
 st.markdown(f"""
 <div class="mobile-app-top-bar">
@@ -185,7 +184,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 사용자별 독립 설정 및 파일 입출력 함수
+# 3. 사용자별 설정 & 초고속 데이터 캐싱 엔진
 # -------------------------------------------------------------
 def get_user_config_file(user_id: str) -> Path:
     safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "default"
@@ -230,18 +229,105 @@ def save_watchlist(user_id: str, watchlist):
     with open(w_file, "w", encoding="utf-8") as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
-# -------------------------------------------------------------
-# 4. 시세 및 검색 엔진
-# -------------------------------------------------------------
+@st.cache_data(ttl=600)
+def get_naver_theme_directory():
+    """네이버 테마명 -> 테마 고유번호(no) 매핑 테이블 캐싱"""
+    theme_map = {}
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    for page in range(1, 8):
+        try:
+            url = f"https://finance.naver.com/sise/theme.naver?&page={page}"
+            res = requests.get(url, headers=headers, timeout=3)
+            soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+            rows = soup.select("table.type_1 td.col_type1 a")
+            if not rows:
+                break
+            for a in rows:
+                t_name = a.text.strip()
+                t_no = a['href'].split('no=')[-1].strip()
+                theme_map[t_name] = t_no
+        except Exception:
+            break
+    return theme_map
+
+@st.cache_data(ttl=60)
+def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
+    """테마에 속한 모든 관련 종목을 필터 없이 100% 수집"""
+    if not theme_no:
+        t_dir = get_naver_theme_directory()
+        theme_no = t_dir.get(theme_name, "")
+        if not theme_no:
+            for k, v in t_dir.items():
+                if theme_name in k or k in theme_name:
+                    theme_no = v
+                    break
+
+    if not theme_no:
+        return []
+
+    stocks = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    try:
+        url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
+        res = requests.get(url, headers=headers, timeout=4)
+        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+        
+        rows = soup.select("table.type_5 tr")
+        for row in rows:
+            name_tag = row.select_one("td.name a")
+            if not name_tag:
+                continue
+            name = name_tag.text.strip()
+            code = name_tag['href'].split('code=')[-1].strip()
+            
+            tds = row.select("td")
+            if len(tds) < 8:
+                continue
+                
+            curr_str = tds[1].text.strip().replace(",", "")
+            curr_p = int(curr_str) if curr_str.isdigit() else 0
+            
+            chg_str = tds[3].text.strip().replace("%", "").replace("+", "").strip()
+            try:
+                chg_rate = float(chg_str)
+            except Exception:
+                chg_rate = 0.0
+                
+            vol_str = tds[6].text.strip().replace(",", "")
+            vol = int(vol_str) if vol_str.isdigit() else 0
+            amount_eok = round((curr_p * vol) / 100000000, 1)
+            
+            stocks.append({
+                "종목명": name,
+                "종목코드": code,
+                "현재가": curr_p,
+                "등락률(%)": chg_rate,
+                "거래대금(억원)": amount_eok,
+                "전략수": 0,
+                "매칭전략": ["THEME"],
+                "시가총액(억원)": 0,
+                "섹터정보": {
+                    "category": theme_name,
+                    "raw_industry": theme_name,
+                    "emoji": "🌊" if "해운" in theme_name else ("🕊️" if "남북" in theme_name else "🔥"),
+                    "bg": "#e0f2fe" if "해운" in theme_name else "#fef3c7",
+                    "color": "#0369a1" if "해운" in theme_name else "#b45309"
+                }
+            })
+    except Exception:
+        pass
+        
+    return stocks
+
 @st.cache_data(ttl=86400)
 def load_all_krx_stocks():
     stocks = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    headers = {'User-Agent': 'Mozilla/5.0'}
     for sosok in [0, 1]:
-        for page in range(1, 15):
+        for page in range(1, 10):
             try:
                 url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
-                res = requests.get(url, headers=headers, timeout=3)
+                res = requests.get(url, headers=headers, timeout=2.5)
                 soup = BeautifulSoup(res.text, 'html.parser')
                 links = soup.select("a.tltle")
                 if not links:
@@ -257,13 +343,13 @@ def load_all_krx_stocks():
         {"name": "삼성전자", "code": "005930"}, {"name": "SK하이닉스", "code": "000660"},
         {"name": "STX그린로지스", "code": "465770"}, {"name": "흥아해운", "code": "003280"},
         {"name": "대한해운", "code": "005880"}, {"name": "HMM", "code": "011200"},
-        {"name": "팬오션", "code": "028670"}, {"name": "KSS해운", "code": "044450"},
+        {"name": "팬오션", "code": "028670"}, {"name": "좋은사람들", "code": "033340"},
+        {"name": "아난티", "code": "025980"}, {"name": "현대엘리베이", "code": "017800"},
+        {"name": "신원", "code": "009270"}, {"name": "일신석재", "code": "007110"},
         {"name": "펩트론", "code": "087010"}, {"name": "삼천당제약", "code": "000250"},
         {"name": "에코프로", "code": "086520"}, {"name": "에코프로비엠", "code": "247540"},
-        {"name": "알테오젠", "code": "196170"}, {"name": "리가켐바이오", "code": "141080"},
-        {"name": "HLB", "code": "028300"}, {"name": "현대차", "code": "005380"}
+        {"name": "알테오젠", "code": "196170"}, {"name": "현대차", "code": "005380"}
     ]
-    
     seen = set()
     final_list = []
     for s in backup_list + stocks:
@@ -283,60 +369,11 @@ def search_stock_by_name(keyword: str):
     matched.sort(key=lambda x: (not x['name'].lower().startswith(kw), len(x['name'])))
     return matched[:10]
 
-@st.cache_data(ttl=60)
-def fetch_theme_stocks(theme_no: str, theme_name: str):
-    stocks = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    try:
-        url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
-        res = requests.get(url, headers=headers, timeout=4)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        rows = soup.select("table.type_5 tr")
-        for row in rows:
-            name_tag = row.select_one("td.name a")
-            if not name_tag:
-                continue
-            name = name_tag.text.strip()
-            code = name_tag['href'].split('code=')[-1].strip()
-            tds = row.select("td")
-            if len(tds) < 8:
-                continue
-            curr_str = tds[1].text.strip().replace(",", "")
-            curr_p = int(curr_str) if curr_str.isdigit() else 0
-            chg_str = tds[3].text.strip().replace("%", "").replace("+", "").strip()
-            try:
-                chg_rate = float(chg_str)
-            except Exception:
-                chg_rate = 0.0
-            vol_str = tds[6].text.strip().replace(",", "")
-            vol = int(vol_str) if vol_str.isdigit() else 0
-            amount_eok = round((curr_p * vol) / 100000000, 1)
-            stocks.append({
-                "종목명": name,
-                "종목코드": code,
-                "현재가": curr_p,
-                "등락률(%)": chg_rate,
-                "거래대금(억원)": amount_eok,
-                "전략수": 0,
-                "매칭전략": ["THEME"],
-                "시가총액(억원)": 0,
-                "섹터정보": {
-                    "category": theme_name,
-                    "raw_industry": theme_name,
-                    "emoji": "🌊" if "해운" in theme_name else "🔥",
-                    "bg": "#e0f2fe" if "해운" in theme_name else "#fef3c7",
-                    "color": "#0369a1" if "해운" in theme_name else "#b45309"
-                }
-            })
-    except Exception:
-        pass
-    return stocks
-
 def fetch_realtime_price(code: str):
     try:
         url = f"https://finance.naver.com/item/main.naver?code={code}"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        res = requests.get(url, headers=headers, timeout=3)
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers, timeout=2)
         soup = BeautifulSoup(res.text, 'html.parser')
         no_today = soup.select_one(".no_today .blind")
         if no_today:
@@ -373,7 +410,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
     strat_badges = ""
     for s_code in row.get('매칭전략', []):
         if s_code == "THEME":
-            strat_badges += f"<span class='badge-span' style='background-color:#2563eb; color:#ffffff;'>테마주도</span>"
+            strat_badges += f"<span class='badge-span' style='background-color:#2563eb; color:#ffffff;'>테마구성</span>"
         else:
             info = NaverStockScreener.STRATEGIES.get(s_code, {})
             strat_badges += f"<span class='badge-span' style='background-color:#334155; color:#ffffff;'>{info.get('badge', s_code)}</span>"
@@ -398,7 +435,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
             <div style='text-align:right;'>{strat_badges}</div>
         </div>
         <div style='margin-top: 6px; font-size: 0.95rem; color:#0f172a;'>
-            <strong>{curr_p:,}원</strong> <span style='color:#dc2626; font-weight:800;'>+{row['등락률(%)']}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
+            <strong>{curr_p:,}원</strong> <span style='color:{'#dc2626' if row['등락률(%)']>0 else '#2563eb'}; font-weight:800;'>{row['등락률(%)']:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
         </div>
         <div style='margin-top: 6px; padding: 6px 8px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; font-size: 0.78rem; color: #475569;'>
             🛑 손절: <strong style='color:#dc2626;'>{calc_stop:,}원 (-{default_stop_pct}%)</strong> &nbsp;|&nbsp; 
@@ -435,13 +472,13 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
             st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 5. 사이드바 (사용자 전환 및 개별 설정)
+# 4. 사이드바 (사용자 전환 및 개별 설정)
 # -------------------------------------------------------------
 saved_creds = load_user_credentials(current_user)
 
 with st.sidebar:
     st.header("👤 사용자 계정 관리")
-    user_input = st.text_input("접속 계정 ID (영문/숫자/한글)", value=current_user)
+    user_input = st.text_input("접속 계정 ID", value=current_user)
     if st.button("🔄 계정 전환", use_container_width=True):
         if user_input.strip():
             st.session_state["current_user"] = user_input.strip()
@@ -484,7 +521,7 @@ with st.sidebar:
                 st.warning("토큰과 ID를 입력하세요.")
 
 # -------------------------------------------------------------
-# 6. 시장 지수 대시보드
+# 5. 시장 지수 대시보드
 # -------------------------------------------------------------
 market_regime = NaverStockScreener.get_market_regime()
 safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
@@ -521,7 +558,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너
+# TAB 1: 퀀트 스크리너 (필터 없는 테마 전 종목 뷰 & 초고속 렌더링)
 # -------------------------------------------------------------
 if active_tab == "screener":
     st.markdown("#### 🔥 주도 테마 & 1,000억↑ 메이저 주도주")
@@ -570,12 +607,13 @@ if active_tab == "screener":
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
     active_theme = st.session_state.get("selected_theme_filter")
     
+    # 🚀 테마 선택 시: 필터 조건 없이 테마 내 모든 관련 종목 현황 리스트업
     if active_theme:
         target_theme_data = next((t for t in top_themes if t["theme_name"] == active_theme), None)
         theme_no = target_theme_data.get('theme_no', '') if target_theme_data else ''
         
-        with st.spinner(f"[{active_theme}] 테마의 모든 관련주 시세 수집 중..."):
-            theme_stocks = fetch_theme_stocks(theme_no, active_theme) if theme_no else []
+        with st.spinner(f"[{active_theme}] 테마 전체 관련주 수집 중..."):
+            theme_stocks = fetch_theme_all_stocks(active_theme, theme_no)
             
         c_head, c_clear = st.columns([3, 1])
         c_head.markdown(f"##### 🎯 [{active_theme}] 전체 관련주 ({len(theme_stocks)}종목)")
@@ -584,23 +622,39 @@ if active_tab == "screener":
             st.rerun()
 
         if theme_stocks:
+            df_theme = pd.DataFrame(theme_stocks)
+            
+            # 테마 상승/보합/하락 요약 통계
+            up_cnt = len(df_theme[df_theme['등락률(%)'] > 0])
+            flat_cnt = len(df_theme[df_theme['등락률(%)'] == 0])
+            down_cnt = len(df_theme[df_theme['등락률(%)'] < 0])
+            
+            st.markdown(f"""
+            <div style='display:flex; gap:6px; margin-bottom:8px;'>
+                <span class='badge-span' style='background:#fee2e2; color:#dc2626;'>상승 {up_cnt}</span>
+                <span class='badge-span' style='background:#f1f5f9; color:#64748b;'>보합 {flat_cnt}</span>
+                <span class='badge-span' style='background:#dbeafe; color:#2563eb;'>하락 {down_cnt}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
             sort_opt = st.radio(
                 "정렬 기준",
-                ["📈 상승률 높은순", "💰 거래대금 많은순"],
+                ["📈 상승률 높은순", "💰 거래대금 많은순", "📉 하락폭 큰순"],
                 horizontal=True,
                 label_visibility="collapsed"
             )
             
-            df_theme = pd.DataFrame(theme_stocks)
             if "상승률" in sort_opt:
                 df_theme = df_theme.sort_values(by="등락률(%)", ascending=False)
+            elif "하락폭" in sort_opt:
+                df_theme = df_theme.sort_values(by="등락률(%)", ascending=True)
             else:
                 df_theme = df_theme.sort_values(by="거래대금(억원)", ascending=False)
 
             for _, r in df_theme.iterrows():
                 render_stock_card(r, default_stop_pct, tab_prefix="theme_all")
         else:
-            st.info(f"[{active_theme}] 테마에 등록된 관련주 데이터를 가져오는 중입니다.")
+            st.info(f"[{active_theme}] 테마에 등록된 관련 종목을 불러오고 있습니다.")
     else:
         st.markdown("##### 🎯 5대 정밀 트레이딩 전략별 주도주")
         if not all_df.empty:
@@ -625,7 +679,7 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오 (개별 사용자 전용)
+# TAB 2: 감시 포트폴리오
 # -------------------------------------------------------------
 elif active_tab == "monitor":
     st.markdown(f"#### 📡 [{current_user}] 감시 포트폴리오 & 5% 변동 알림")
