@@ -594,7 +594,7 @@ st.markdown(f"""
 # TAB 1: 퀀트 스크리너
 # -------------------------------------------------------------
 if active_tab == "screener":
-    st.markdown("#### 🔥 주도 테마 & 300억↑ 메이저 주도주")
+    st.markdown("#### 🔥 주도 테마 & 주도주")
     
     c_btn, c_empty = st.columns([1, 1])
     with c_btn:
@@ -607,7 +607,7 @@ if active_tab == "screener":
         st.cache_data.clear()
         st.rerun()
 
-    with st.spinner("⏳ 실시간 시장 주도주 및 5대 전략 스캐닝 중..."):
+    with st.spinner("⏳ 실시간 시장 주도주 스캐닝 중..."):
         themes_data, all_df = get_cached_screener_data()
     
     top_themes = themes_data
