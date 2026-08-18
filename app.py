@@ -18,7 +18,7 @@ WATCHLIST_FILE = "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. 모바일 최적화 페이지 설정 및 반응형 CSS
+# 1. 모바일 맞춤 페이지 설정 및 하단 내비게이션 CSS
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
@@ -29,17 +29,17 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+    /* 상단/하단 여백 (하단 네비 바에 가려지지 않도록 패딩 확보) */
     .block-container {
-        padding-top: 0.8rem !important;
-        padding-bottom: 2.5rem !important;
+        padding-top: 0.6rem !important;
+        padding-bottom: 5.5rem !important;
         padding-left: 0.6rem !important;
         padding-right: 0.6rem !important;
     }
     .mobile-header-title {
-        font-size: 1.25rem !important;
+        font-size: 1.2rem !important;
         font-weight: 800;
-        margin-bottom: 0.4rem;
-        line-height: 1.3;
+        margin-bottom: 0.3rem;
     }
     .stButton button {
         width: 100% !important;
@@ -57,8 +57,18 @@ st.markdown("""
         margin-right: 3px;
         margin-bottom: 2px;
     }
-    div[data-testid="stMetricValue"] {
-        font-size: 1.15rem !important;
+    
+    /* 모바일 앱 전용 고정 하단 내비게이션 바 컨테이너 */
+    .mobile-bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #ffffff;
+        border-top: 1px solid #e2e8f0;
+        padding: 6px 8px 8px 8px;
+        z-index: 999999;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -112,7 +122,7 @@ def format_korean_money(amount_eok: float) -> str:
         return f"{jo}조 {eok:,}억 원" if eok > 0 else f"{jo}조 원"
     return f"{int(amount_eok):,}억 원"
 
-@st.dialog("📈 실시간 인터랙티브 차트 & 호가")
+@st.dialog("📈 실시간 차트 & 호가")
 def show_chart_modal(code: str, name: str):
     st.markdown(f"### {name} (`{code}`)")
     st.markdown(f"[🔗 네이버 증권 새 창 열기](https://finance.naver.com/item/main.naver?code={code})")
@@ -229,13 +239,11 @@ with st.sidebar:
                 st.warning("토큰과 ID를 입력하세요.")
 
 # -------------------------------------------------------------
-# 4. 상단 헤더 & 모바일 국면 카드 (지수 강조 & 취소선 방지)
+# 4. 상단 헤더 & 모바일 국면 카드
 # -------------------------------------------------------------
 st.markdown('<div class="mobile-header-title">📈 AI 트레이딩 코치 & 주도주 센터</div>', unsafe_allow_html=True)
 
 market_regime = NaverStockScreener.get_market_regime()
-
-# 취소선 방지 치환
 safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
 
 kospi_pt = str(market_regime.get('kospi_close', '2,650.00'))
@@ -247,48 +255,41 @@ kosdaq_chg = str(market_regime.get('kosdaq_change_pct', '-0.85'))
 kosdaq_color = "#e03131" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#1971c2" if kosdaq_chg.startswith("-") else "#333333")
 
 with st.container(border=True):
-    st.markdown(f"<div style='font-size: 1.05rem; font-weight: 800; margin-bottom: 6px;'>{market_regime['badge']}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size: 1.0rem; font-weight: 800; margin-bottom: 5px;'>{market_regime['badge']}</div>", unsafe_allow_html=True)
     
     col_idx1, col_idx2 = st.columns(2)
     with col_idx1:
         st.markdown(f"""
-        <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 10px; text-align: center;'>
-            <div style='font-size: 0.75rem; color: #64748b; font-weight: bold;'>KOSPI 코스피</div>
-            <div style='font-size: 1.1rem; font-weight: 800; color: {kospi_color};'>{kospi_pt} <span style='font-size: 0.8rem;'>({kospi_chg}%)</span></div>
+        <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 5px 8px; text-align: center;'>
+            <div style='font-size: 0.72rem; color: #64748b; font-weight: bold;'>KOSPI 코스피</div>
+            <div style='font-size: 1.05rem; font-weight: 800; color: {kospi_color};'>{kospi_pt} <span style='font-size: 0.78rem;'>({kospi_chg}%)</span></div>
         </div>
         """, unsafe_allow_html=True)
     with col_idx2:
         st.markdown(f"""
-        <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 10px; text-align: center;'>
-            <div style='font-size: 0.75rem; color: #64748b; font-weight: bold;'>KOSDAQ 코스닥</div>
-            <div style='font-size: 1.1rem; font-weight: 800; color: {kosdaq_color};'>{kosdaq_pt} <span style='font-size: 0.8rem;'>({kosdaq_chg}%)</span></div>
+        <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 5px 8px; text-align: center;'>
+            <div style='font-size: 0.72rem; color: #64748b; font-weight: bold;'>KOSDAQ 코스닥</div>
+            <div style='font-size: 1.05rem; font-weight: 800; color: {kosdaq_color};'>{kosdaq_pt} <span style='font-size: 0.78rem;'>({kosdaq_chg}%)</span></div>
         </div>
         """, unsafe_allow_html=True)
         
-    st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
-    st.markdown(f"💡 <span style='font-size:0.83rem;'><b>가이드:</b> {market_regime['desc']}</span>", unsafe_allow_html=True)
-    st.markdown(f"🎯 <span style='font-size:0.83rem;'><b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:bold; padding:2px 6px; border-radius:4px;'>{safe_alloc}</span></span>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+    st.markdown(f"💡 <span style='font-size:0.82rem;'><b>가이드:</b> {market_regime['desc']}</span>", unsafe_allow_html=True)
+    st.markdown(f"🎯 <span style='font-size:0.82rem;'><b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:bold; padding:2px 6px; border-radius:4px;'>{safe_alloc}</span></span>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 5. 모바일 상단 네비게이션 드롭다운
+# 5. 활성 탭 상태 관리 (Session State)
 # -------------------------------------------------------------
-selected_tab = st.selectbox(
-    "메뉴 이동",
-    [
-        "🎯 1. 퀀트 스크리너 (시총·거래 1000억↑)",
-        "📡 2. 감시 포트폴리오 & 리스크 온도계",
-        "🔬 3. 20년 팩트 백테스팅",
-        "📢 4. 4대 타임라인 텔레그램 브리핑",
-        "🧠 5. 매매복기 & AI 심층진단"
-    ],
-    label_visibility="collapsed"
-)
+if "active_nav_tab" not in st.session_state:
+    st.session_state["active_nav_tab"] = "screener"
+
+active_tab = st.session_state["active_nav_tab"]
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (빠른 로딩 & 주도주 중심)
+# TAB 1: 퀀트 스크리너
 # -------------------------------------------------------------
-if "1. 퀀트 스크리너" in selected_tab:
-    st.markdown("#### 🔥 시장 주도 테마 & 1,000억↑ 메이저 주도주")
+if active_tab == "screener":
+    st.markdown("#### 🔥 주도 테마 & 1,000억↑ 메이저 주도주")
     c_btn, c_slider = st.columns([1, 2])
     with c_btn:
         run_scan = st.button("🔄 실시간 스캔", use_container_width=True)
@@ -359,13 +360,13 @@ if "1. 퀀트 스크리너" in selected_tab:
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오 & 리스크 온도계
+# TAB 2: 감시 포트폴리오
 # -------------------------------------------------------------
-elif "2. 감시 포트폴리오" in selected_tab:
-    st.markdown("#### 📡 실시간 보유/감시 종목 리스크 온도계")
+elif active_tab == "monitor":
+    st.markdown("#### 📡 실시간 감시 포트폴리오 & 리스크")
     current_list = get_saved_watchlist()
     if not current_list:
-        st.info("현재 감시 중인 종목이 없습니다. 1번 메뉴에서 유망 종목을 등록하세요.")
+        st.info("현재 감시 중인 종목이 없습니다. 퀀트 스크리너에서 유망 종목을 등록하세요.")
     else:
         for item in current_list:
             buy_p = item['buy_price']
@@ -405,7 +406,7 @@ elif "2. 감시 포트폴리오" in selected_tab:
 # -------------------------------------------------------------
 # TAB 3: 20년 팩트 백테스팅
 # -------------------------------------------------------------
-elif "3. 20년 팩트 백테스팅" in selected_tab:
+elif active_tab == "backtest":
     st.markdown("#### 🔬 5대 전략 20년 팩트 백테스팅")
 
     PRESET_STOCKS = {
@@ -478,11 +479,11 @@ elif "3. 20년 팩트 백테스팅" in selected_tab:
                 st.dataframe(df_log, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------
-# TAB 4: 4대 타임라인 텔레그램 브리핑 센터
+# TAB 4: 4대 타임라인 텔레그램 브리핑
 # -------------------------------------------------------------
-elif "4. 4대 타임라인" in selected_tab:
+elif active_tab == "briefing":
     st.markdown("#### 📢 시간대별 4대 텔레그램 브리핑 센터")
-    st.caption("버튼을 누르면 원본의 정밀 수급 데이터가 담긴 브리핑이 스마트폰으로 즉시 발송됩니다.")
+    st.caption("버튼을 누르면 정밀 수급 분석 브리핑이 스마트폰 텔레그램으로 즉시 발송됩니다.")
 
     tg_t = saved_creds["tg_token"]
     tg_c = saved_creds["tg_chat_id"]
@@ -541,8 +542,8 @@ elif "4. 4대 타임라인" in selected_tab:
 # -------------------------------------------------------------
 # TAB 5: 매매복기 & AI 심층진단
 # -------------------------------------------------------------
-elif "5. 매매복기" in selected_tab:
-    st.markdown("#### 📊 삼성증권 체결 기반 AI 습관 진단")
+elif active_tab == "report":
+    st.markdown("#### 📊 삼성증권 매매복기 & AI 진단")
     uploaded_file = st.file_uploader("📂 삼성증권 엑셀(.xlsx) 업로드", type=["xlsx", "xls"])
     if uploaded_file is not None:
         try:
@@ -572,3 +573,30 @@ elif "5. 매매복기" in selected_tab:
                 st.warning("사이드바에서 Gemini API 키를 먼저 입력하고 [영구 저장]을 눌러주세요.")
         except Exception as e:
             st.error(f"엑셀 분석 중 오류: {str(e)}")
+
+# -------------------------------------------------------------
+# 6. 고정 하단 내비게이션 바 (토스/증권 앱 스타일 5대 메뉴)
+# -------------------------------------------------------------
+st.markdown("<div class='mobile-bottom-nav'></div>", unsafe_allow_html=True)
+b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
+
+with b_col1:
+    if st.button("🎯\n스크리너", key="nav_screener", use_container_width=True, type="primary" if active_tab=="screener" else "secondary"):
+        st.session_state["active_nav_tab"] = "screener"
+        st.rerun()
+with b_col2:
+    if st.button("📡\n포트폴리오", key="nav_monitor", use_container_width=True, type="primary" if active_tab=="monitor" else "secondary"):
+        st.session_state["active_nav_tab"] = "monitor"
+        st.rerun()
+with b_col3:
+    if st.button("🔬\n백테스팅", key="nav_backtest", use_container_width=True, type="primary" if active_tab=="backtest" else "secondary"):
+        st.session_state["active_nav_tab"] = "backtest"
+        st.rerun()
+with b_col4:
+    if st.button("📢\n브리핑", key="nav_briefing", use_container_width=True, type="primary" if active_tab=="briefing" else "secondary"):
+        st.session_state["active_nav_tab"] = "briefing"
+        st.rerun()
+with b_col5:
+    if st.button("🧠\n매매복기", key="nav_report", use_container_width=True, type="primary" if active_tab=="report" else "secondary"):
+        st.session_state["active_nav_tab"] = "report"
+        st.rerun()
