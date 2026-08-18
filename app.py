@@ -18,7 +18,7 @@ WATCHLIST_FILE = "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. 모바일 맞춤 페이지 설정 및 하단 내비게이션 CSS
+# 1. 모바일 앱 전용 고정 하단 내비게이션 완벽 CSS
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
@@ -29,25 +29,20 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* 상단/하단 여백 (하단 네비 바에 가려지지 않도록 패딩 확보) */
+    /* 하단 고정 바가 본문 콘텐츠를 가리지 않도록 하단 여백 대폭 확보 */
     .block-container {
         padding-top: 0.6rem !important;
-        padding-bottom: 5.5rem !important;
+        padding-bottom: 6rem !important;
         padding-left: 0.6rem !important;
         padding-right: 0.6rem !important;
     }
+    
     .mobile-header-title {
         font-size: 1.2rem !important;
         font-weight: 800;
         margin-bottom: 0.3rem;
     }
-    .stButton button {
-        width: 100% !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        padding: 0.45rem 0.6rem !important;
-        font-size: 0.85rem !important;
-    }
+    
     .badge-span {
         display: inline-block;
         padding: 2px 6px;
@@ -58,17 +53,27 @@ st.markdown("""
         margin-bottom: 2px;
     }
     
-    /* 모바일 앱 전용 고정 하단 내비게이션 바 컨테이너 */
-    .mobile-bottom-nav {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: #ffffff;
-        border-top: 1px solid #e2e8f0;
-        padding: 6px 8px 8px 8px;
-        z-index: 999999;
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+    /* 🚀 진짜 화면 최하단 고정 플로팅 바 CSS (Streamlit 컨테이너 완벽 타겟팅) */
+    div[data-testid="stBottomBlockContainer"] {
+        background-color: #ffffff !important;
+        border-top: 1px solid #e2e8f0 !important;
+        padding: 6px 4px 8px 4px !important;
+        box-shadow: 0 -3px 12px rgba(0,0,0,0.08) !important;
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        z-index: 999999 !important;
+    }
+    
+    /* 하단 버튼 앱 스타일링 */
+    div[data-testid="stBottomBlockContainer"] button {
+        height: 48px !important;
+        padding: 2px 0px !important;
+        line-height: 1.2 !important;
+        font-size: 0.75rem !important;
+        font-weight: 700 !important;
+        border-radius: 8px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -239,7 +244,7 @@ with st.sidebar:
                 st.warning("토큰과 ID를 입력하세요.")
 
 # -------------------------------------------------------------
-# 4. 상단 헤더 & 모바일 국면 카드
+# 4. 상단 헤더 & 모바일 지수 대시보드
 # -------------------------------------------------------------
 st.markdown('<div class="mobile-header-title">📈 AI 트레이딩 코치 & 주도주 센터</div>', unsafe_allow_html=True)
 
@@ -278,7 +283,7 @@ with st.container(border=True):
     st.markdown(f"🎯 <span style='font-size:0.82rem;'><b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:bold; padding:2px 6px; border-radius:4px;'>{safe_alloc}</span></span>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 5. 활성 탭 상태 관리 (Session State)
+# 5. 활성 탭 상태 관리
 # -------------------------------------------------------------
 if "active_nav_tab" not in st.session_state:
     st.session_state["active_nav_tab"] = "screener"
@@ -575,28 +580,28 @@ elif active_tab == "report":
             st.error(f"엑셀 분석 중 오류: {str(e)}")
 
 # -------------------------------------------------------------
-# 6. 고정 하단 내비게이션 바 (토스/증권 앱 스타일 5대 메뉴)
+# 6. Streamlit 공식 하단 고정 컨테이너 (Floating Bottom Bar)
 # -------------------------------------------------------------
-st.markdown("<div class='mobile-bottom-nav'></div>", unsafe_allow_html=True)
-b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
-
-with b_col1:
-    if st.button("🎯\n스크리너", key="nav_screener", use_container_width=True, type="primary" if active_tab=="screener" else "secondary"):
-        st.session_state["active_nav_tab"] = "screener"
-        st.rerun()
-with b_col2:
-    if st.button("📡\n포트폴리오", key="nav_monitor", use_container_width=True, type="primary" if active_tab=="monitor" else "secondary"):
-        st.session_state["active_nav_tab"] = "monitor"
-        st.rerun()
-with b_col3:
-    if st.button("🔬\n백테스팅", key="nav_backtest", use_container_width=True, type="primary" if active_tab=="backtest" else "secondary"):
-        st.session_state["active_nav_tab"] = "backtest"
-        st.rerun()
-with b_col4:
-    if st.button("📢\n브리핑", key="nav_briefing", use_container_width=True, type="primary" if active_tab=="briefing" else "secondary"):
-        st.session_state["active_nav_tab"] = "briefing"
-        st.rerun()
-with b_col5:
-    if st.button("🧠\n매매복기", key="nav_report", use_container_width=True, type="primary" if active_tab=="report" else "secondary"):
-        st.session_state["active_nav_tab"] = "report"
-        st.rerun()
+with st.container():
+    # Streamlit Cloud의 bottom 컨테이너를 완벽 타겟팅
+    b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
+    with b_col1:
+        if st.button("🎯 스크리너", key="nav_btn_screener", use_container_width=True, type="primary" if active_tab=="screener" else "secondary"):
+            st.session_state["active_nav_tab"] = "screener"
+            st.rerun()
+    with b_col2:
+        if st.button("📡 포트", key="nav_btn_monitor", use_container_width=True, type="primary" if active_tab=="monitor" else "secondary"):
+            st.session_state["active_nav_tab"] = "monitor"
+            st.rerun()
+    with b_col3:
+        if st.button("🔬 백테스트", key="nav_btn_backtest", use_container_width=True, type="primary" if active_tab=="backtest" else "secondary"):
+            st.session_state["active_nav_tab"] = "backtest"
+            st.rerun()
+    with b_col4:
+        if st.button("📢 브리핑", key="nav_btn_briefing", use_container_width=True, type="primary" if active_tab=="briefing" else "secondary"):
+            st.session_state["active_nav_tab"] = "briefing"
+            st.rerun()
+    with b_col5:
+        if st.button("🧠 복기", key="nav_btn_report", use_container_width=True, type="primary" if active_tab=="report" else "secondary"):
+            st.session_state["active_nav_tab"] = "report"
+            st.rerun()
