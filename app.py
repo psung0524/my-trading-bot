@@ -9,6 +9,7 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from google import genai
+import streamlit.components.v1 as components
 
 from main import SamsungSecuritiesParser, TradeFIFOEngine, TradingMetricsAnalyzer, get_best_available_model
 from screener import NaverStockScreener
@@ -23,7 +24,7 @@ OLD_WATCHLIST_FILE = Path(__file__).parent / "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. 토스증권 스타일 UI & 반응형 CSS
+# 1. UI 설정 & 사용자 계정 자동 기억 (Local Storage)
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
@@ -35,11 +36,31 @@ st.set_page_config(
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
 
+# 1) URL 파라미터 기반 계정 확인
 url_user = query_params.get("user", "").strip()
 if "current_user" not in st.session_state:
     st.session_state["current_user"] = url_user if url_user else "default"
 
 current_user = st.session_state["current_user"]
+
+# 2) 브라우저 로컬 저장소 자동 기억 스크립트
+components.html(f"""
+<script>
+    const currentParam = new URLSearchParams(window.parent.location.search).get("user");
+    const activeUser = "{current_user}";
+    
+    if (activeUser !== "default") {{
+        localStorage.setItem("my_trading_bot_user", activeUser);
+    }}
+    
+    const savedUser = localStorage.getItem("my_trading_bot_user");
+    if (savedUser && !currentParam && savedUser !== activeUser) {{
+        const url = new URL(window.parent.location.href);
+        url.searchParams.set("user", savedUser);
+        window.parent.location.href = url.toString();
+    }}
+</script>
+""", height=0, width=0)
 
 st.markdown("""
 <style>
@@ -186,7 +207,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 사용자별 설정 & 기존 데이터 자동 복구 엔진
+# 3. 사용자별 설정 & 데이터 입출력 함수
 # -------------------------------------------------------------
 def get_user_config_file(user_id: str) -> Path:
     safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "default"
@@ -203,7 +224,6 @@ def load_user_credentials(user_id: str):
         "tg_chat_id": os.getenv("TELEGRAM_CHAT_ID", "")
     }
     cfg_file = get_user_config_file(user_id)
-    # 기존 단일 파일 복구 처리
     if not cfg_file.exists() and OLD_CONFIG_FILE.exists():
         try:
             with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -226,7 +246,6 @@ def load_user_credentials(user_id: str):
 
 def get_saved_watchlist(user_id: str):
     w_file = get_user_watchlist_file(user_id)
-    # 기존 단일 watchlist.json 파일 복구 처리
     if not w_file.exists() and OLD_WATCHLIST_FILE.exists():
         try:
             with open(OLD_WATCHLIST_FILE, "r", encoding="utf-8") as f:
@@ -252,6 +271,9 @@ def save_watchlist(user_id: str, watchlist):
     with open(w_file, "w", encoding="utf-8") as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
+# -------------------------------------------------------------
+# 4. 테마 수집 & 실시간 정밀 시세 엔진 (등락률/거래대금 완벽 파싱)
+# -------------------------------------------------------------
 @st.cache_data(ttl=600)
 def get_naver_theme_directory():
     theme_map = {}
@@ -272,8 +294,28 @@ def get_naver_theme_directory():
             break
     return theme_map
 
-@st.cache_data(ttl=60)
+def fetch_single_stock_realtime(code: str):
+    """종목코드 기반 네이버 모바일 실시간 상세 정보 파싱"""
+    try:
+        url = f"https://m.stock.naver.com/api/stock/{code}/basic"
+        headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)'}
+        res = requests.get(url, headers=headers, timeout=2.5)
+        if res.status_code == 200:
+            data = res.json()
+            curr_p = int(str(data.get('nowPrc', '0')).replace(',', ''))
+            chg_rate = float(str(data.get('fluctuationRate', '0.0')).replace('%', '').replace('+', ''))
+            
+            # 거래대금 계산 (거래량 * 현재가 또는 제공 거래대금)
+            vol = int(str(data.get('accQuant', '0')).replace(',', ''))
+            amount_eok = round((curr_p * vol) / 100000000, 1)
+            return curr_p, chg_rate, amount_eok
+    except Exception:
+        pass
+    return None, None, None
+
+@st.cache_data(ttl=30)
 def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
+    """테마 전체 종목 수집 및 실시간 시세/등락률/거래대금 매핑"""
     if not theme_no:
         t_dir = get_naver_theme_directory()
         theme_no = t_dir.get(theme_name, "")
@@ -287,7 +329,7 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
         return []
 
     stocks = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
         res = requests.get(url, headers=headers, timeout=4)
@@ -301,37 +343,59 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
                 continue
             name = name_tag.text.strip()
             code = name_tag['href'].split('code=')[-1].strip()
-            if code:
-                items.append((name, str(code).zfill(6)))
+            
+            # 1차로 HTML 테이블 데이터 파싱
+            tds = row.select("td")
+            html_price = 0
+            html_chg = 0.0
+            html_vol = 0
+            if len(tds) >= 8:
+                try:
+                    html_price = int(tds[1].text.strip().replace(",", ""))
+                    html_chg = float(tds[3].text.strip().replace("%", "").replace("+", "").strip())
+                    html_vol = int(tds[6].text.strip().replace(",", ""))
+                except Exception:
+                    pass
+
+            items.append((name, str(code).zfill(6), html_price, html_chg, html_vol))
 
         if not items:
             return []
 
-        code_list_str = ",".join([c for _, c in items])
+        # 2차: 실시간 API 배치 파싱 시도
+        code_list_str = ",".join([c for _, c, _, _, _ in items])
         api_url = f"https://polling.finance.naver.com/api/realtime/domestic/stock/{code_list_str}"
-        api_res = requests.get(api_url, headers=headers, timeout=3)
-        api_data = api_res.json()
-
         stock_info_map = {}
-        if 'result' in api_data and 'areas' in api_data['result']:
-            for area in api_data['result']['areas']:
-                for it in area.get('datas', []):
-                    c_code = str(it.get('cd', '')).zfill(6)
-                    stock_info_map[c_code] = {
-                        "nv": it.get('nv', 0),
-                        "cr": it.get('cr', 0.0),
-                        "aq": it.get('aq', 0),
-                        "aa": it.get('aa', 0)
-                    }
+        try:
+            api_res = requests.get(api_url, headers=headers, timeout=2.5)
+            if api_res.status_code == 200:
+                api_data = api_res.json()
+                if 'result' in api_data and 'areas' in api_data['result']:
+                    for area in api_data['result']['areas']:
+                        for it in area.get('datas', []):
+                            c_code = str(it.get('cd', '')).zfill(6)
+                            stock_info_map[c_code] = {
+                                "nv": it.get('nv', 0),
+                                "cr": it.get('cr', 0.0),
+                                "aq": it.get('aq', 0),
+                                "aa": it.get('aa', 0)
+                            }
+        except Exception:
+            pass
 
-        for name, code in items:
+        for name, code, h_p, h_c, h_v in items:
             info = stock_info_map.get(code, {})
-            curr_p = int(info.get('nv', 0))
-            chg_rate = float(info.get('cr', 0.0))
-            amount_eok = round(float(info.get('aa', 0)) / 100, 1)
+            curr_p = int(info.get('nv', 0)) or h_p
+            chg_rate = float(info.get('cr', 0.0)) if info.get('cr') is not None else h_c
+            amount_eok = round(float(info.get('aa', 0)) / 100, 1) if info.get('aa', 0) > 0 else round((curr_p * h_v) / 100000000, 1)
 
+            # API와 HTML 파싱이 모두 실패했을 경우 단일 API 호출로 확실하게 복구
             if curr_p == 0:
-                curr_p = fetch_realtime_price(code) or 0
+                s_p, s_c, s_a = fetch_single_stock_realtime(code)
+                if s_p:
+                    curr_p = s_p
+                    chg_rate = s_c
+                    amount_eok = s_a
 
             stocks.append({
                 "종목명": name,
@@ -345,7 +409,7 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
                 "섹터정보": {
                     "category": theme_name,
                     "raw_industry": theme_name,
-                    "emoji": "🌊" if "해운" in theme_name else ("🕊️" if "남북" in theme_name else "🔥"),
+                    "emoji": "🚲" if "자전거" in theme_name else ("🌊" if "해운" in theme_name else "🔥"),
                     "bg": "#e0f2fe" if "해운" in theme_name else "#fef3c7",
                     "color": "#0369a1" if "해운" in theme_name else "#b45309"
                 }
@@ -376,15 +440,14 @@ def load_all_krx_stocks():
                 break
 
     backup_list = [
-        {"name": "삼성전자", "code": "005930"}, {"name": "SK하이닉스", "code": "000660"},
-        {"name": "STX그린로지스", "code": "465770"}, {"name": "흥아해운", "code": "003280"},
-        {"name": "대한해운", "code": "005880"}, {"name": "HMM", "code": "011200"},
-        {"name": "팬오션", "code": "028670"}, {"name": "좋은사람들", "code": "033340"},
-        {"name": "아난티", "code": "025980"}, {"name": "현대엘리베이", "code": "017800"},
-        {"name": "신원", "code": "009270"}, {"name": "일신석재", "code": "007110"},
+        {"name": "삼천리자전거", "code": "024950"}, {"name": "빅텍", "code": "065450"},
+        {"name": "알톤", "code": "123750"}, {"name": "삼성전자", "code": "005930"},
+        {"name": "SK하이닉스", "code": "000660"}, {"name": "STX그린로지스", "code": "465770"},
+        {"name": "흥아해운", "code": "003280"}, {"name": "대한해운", "code": "005880"},
+        {"name": "HMM", "code": "011200"}, {"name": "팬오션", "code": "028670"},
+        {"name": "좋은사람들", "code": "033340"}, {"name": "아난티", "code": "025980"},
         {"name": "펩트론", "code": "087010"}, {"name": "삼천당제약", "code": "000250"},
-        {"name": "에코프로", "code": "086520"}, {"name": "에코프로비엠", "code": "247540"},
-        {"name": "알테오젠", "code": "196170"}, {"name": "현대차", "code": "005380"}
+        {"name": "에코프로", "code": "086520"}, {"name": "알테오젠", "code": "196170"}
     ]
     seen = set()
     final_list = []
@@ -471,7 +534,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
             <div style='text-align:right;'>{strat_badges}</div>
         </div>
         <div style='margin-top: 6px; font-size: 0.95rem; color:#0f172a;'>
-            <strong>{curr_p:,}원</strong> <span style='color:{'#dc2626' if row['등락률(%)']>0 else '#2563eb'}; font-weight:800;'>{row['등락률(%)']:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
+            <strong>{curr_p:,}원</strong> <span style='color:{'#dc2626' if row['등락률(%)']>0 else ('#2563eb' if row['등락률(%)']<0 else '#64748b')}; font-weight:800;'>{row['등락률(%)']:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
         </div>
         <div style='margin-top: 6px; padding: 6px 8px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; font-size: 0.78rem; color: #475569;'>
             🛑 손절: <strong style='color:#dc2626;'>{calc_stop:,}원 (-{default_stop_pct}%)</strong> &nbsp;|&nbsp; 
@@ -508,7 +571,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
             st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 4. 사이드바 (사용자 전환 및 개별 설정)
+# 5. 사이드바 (사용자 전환 및 개별 설정)
 # -------------------------------------------------------------
 saved_creds = load_user_credentials(current_user)
 
@@ -557,7 +620,7 @@ with st.sidebar:
                 st.warning("토큰과 ID를 입력하세요.")
 
 # -------------------------------------------------------------
-# 5. 시장 지수 대시보드
+# 6. 시장 지수 대시보드
 # -------------------------------------------------------------
 market_regime = NaverStockScreener.get_market_regime()
 safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
@@ -743,7 +806,7 @@ elif active_tab == "monitor":
 
             if st.button(f"➕ [{sel_stock['name']}] 등록", use_container_width=True, type="primary"):
                 curr_list = get_saved_watchlist(current_user)
-                curr_list = [s for s in current_list if s["code"] != sel_stock["code"]]
+                curr_list = [s for s in curr_list if s["code"] != sel_stock["code"]]
                 calc_stop = int(buy_price_in * (1 - (stop_pct_in / 100)))
                 calc_tp = int(buy_price_in * (1 + ((stop_pct_in * 3) / 100)))
                 
