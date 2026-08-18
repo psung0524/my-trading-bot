@@ -36,14 +36,12 @@ st.set_page_config(
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
 
-# URL 파라미터 기반 계정 확인
 url_user = query_params.get("user", "").strip()
 if "current_user" not in st.session_state:
     st.session_state["current_user"] = url_user if url_user else "default"
 
 current_user = st.session_state["current_user"]
 
-# 브라우저 로컬 저장소 자동 기억 스크립트
 components.html(f"""
 <script>
     const currentParam = new URLSearchParams(window.parent.location.search).get("user");
@@ -276,7 +274,7 @@ def save_watchlist(user_id: str, watchlist):
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
 # -------------------------------------------------------------
-# 4. 🔥 [초고속 일괄 조회 엔진] 관심종목 한 번에 로딩
+# 4. 캐싱 & 시세 조회 엔진
 # -------------------------------------------------------------
 @st.cache_data(ttl=180, show_spinner=False)
 def get_cached_screener_data():
@@ -307,10 +305,8 @@ def get_naver_theme_directory():
     return theme_map
 
 def fetch_batch_realtime_prices(codes: list) -> dict:
-    """여러 종목의 시세를 한 번의 API 호출로 초고속 일괄 조회 (일괄 팍 로딩)"""
     if not codes:
         return {}
-    
     price_map = {}
     try:
         code_str = ",".join([str(c).zfill(6) for c in codes])
@@ -329,14 +325,12 @@ def fetch_batch_realtime_prices(codes: list) -> dict:
     except Exception:
         pass
     
-    # API 조회 실패한 종목이 있다면 단일 조회로 백업
     for c in codes:
         c_code = str(c).zfill(6)
         if c_code not in price_map or price_map[c_code] == 0:
             p = fetch_single_stock_price(c_code)
             if p > 0:
                 price_map[c_code] = p
-                
     return price_map
 
 def fetch_single_stock_price(code: str):
@@ -484,11 +478,11 @@ def show_chart_modal(code: str, name: str):
     chart_url = f"https://ssl.pstatic.net/imgfinance/chart/item/area/day/{code}.png"
     st.image(chart_url, caption="일봉 차트", use_container_width=True)
 
-def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
+def render_stock_card(row, tab_prefix: str = "all"):
     curr_p = int(row['현재가'])
-    calc_stop = int(curr_p * (1 - (default_stop_pct / 100)))
-    take_profit_3r_pct = round(default_stop_pct * 3.0, 1)
-    calc_tp_3r = int(curr_p * (1 + (take_profit_3r_pct / 100)))
+    # 손절선 고정 -6%, 익절선 +18% (3R)
+    calc_stop = int(curr_p * 0.94)
+    calc_tp_3r = int(curr_p * 1.18)
 
     formatted_money = format_korean_money(row['거래대금(억원)'])
     is_golden = row.get('전략수', 0) >= 2
@@ -526,8 +520,8 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
             <strong>{curr_p:,}원</strong> <span style='color:{'#dc2626' if row['등락률(%)']>0 else ('#2563eb' if row['등락률(%)']<0 else '#64748b')}; font-weight:800;'>{row['등락률(%)']:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
         </div>
         <div style='margin-top: 6px; padding: 6px 8px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; font-size: 0.78rem; color: #475569;'>
-            🛑 손절: <strong style='color:#dc2626;'>{calc_stop:,}원 (-{default_stop_pct}%)</strong> &nbsp;|&nbsp; 
-            🎯 3R익절: <strong style='color:#16a34a;'>{calc_tp_3r:,}원 (+{take_profit_3r_pct}%)</strong>
+            🛑 손절: <strong style='color:#dc2626;'>{calc_stop:,}원 (-6.0%)</strong> &nbsp;|&nbsp; 
+            🎯 3R익절: <strong style='color:#16a34a;'>{calc_tp_3r:,}원 (+18.0%)</strong>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -548,9 +542,9 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
                 "current_price": curr_p,
                 "pnl_pct": 0.0,
                 "stop_price": calc_stop,
-                "stop_pct": -default_stop_pct,
+                "stop_pct": -6.0,
                 "tp_price": calc_tp_3r,
-                "tp_pct": take_profit_3r_pct,
+                "tp_pct": 18.0,
                 "last_notified_tier": 0,
                 "theme": f"{sec_emoji} {sec_cat}",
                 "strategy": ",".join(row.get('매칭전략', ['THEME'])),
@@ -598,15 +592,15 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너
+# TAB 1: 퀀트 스크리너 (손절선 슬라이더 삭제 완료)
 # -------------------------------------------------------------
 if active_tab == "screener":
     st.markdown("#### 🔥 주도 테마 & 300억↑ 메이저 주도주")
-    c_btn, c_slider = st.columns([1, 2])
+    
+    # 💡 손절선 슬라이더를 완전히 제거하고 스캔 버튼을 단독 배치하여 깔끔하게 정돈
+    c_btn, c_empty = st.columns([1, 1])
     with c_btn:
         run_scan = st.button("🔄 실시간 재스캔", use_container_width=True)
-    with c_slider:
-        default_stop_pct = st.slider("기본 손절선 (%)", min_value=2.0, max_value=12.0, value=6.0, step=0.5)
 
     if "selected_theme_filter" not in st.session_state:
         st.session_state["selected_theme_filter"] = None
@@ -688,7 +682,7 @@ if active_tab == "screener":
                 df_theme = df_theme.sort_values(by="거래대금(억원)", ascending=False)
 
             for _, r in df_theme.iterrows():
-                render_stock_card(r, default_stop_pct, tab_prefix="theme_all")
+                render_stock_card(r, tab_prefix="theme_all")
         else:
             st.info(f"[{active_theme}] 테마에 등록된 관련 종목을 불러오고 있습니다.")
     else:
@@ -704,7 +698,7 @@ if active_tab == "screener":
                     st.info("해당 조건의 종목이 없습니다.")
                     return
                 for _, r in df_subset.iterrows():
-                    render_stock_card(r, default_stop_pct, tab_prefix=tab_prefix)
+                    render_stock_card(r, tab_prefix=tab_prefix)
 
             with sub_tabs[0]: render_list(all_df, "all")
             with sub_tabs[1]: render_list(all_df[all_df['전략수'] >= 2], "golden")
@@ -715,7 +709,7 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오 (🔥 일괄 배치 조회로 팍 로딩 최적화)
+# TAB 2: 감시 포트폴리오
 # -------------------------------------------------------------
 elif active_tab == "monitor":
     st.markdown(f"#### 📡 [{current_user}] 감시 포트폴리오 & 5% 변동 알림")
@@ -778,7 +772,6 @@ elif active_tab == "monitor":
     if not current_list:
         st.info(f"[{current_user}] 계정에 감시 중인 종목이 없습니다. 위에서 종목을 검색해 등록하세요.")
     else:
-        # 💡 [핵심 최적화] 관심종목 전체 코드를 추출해 한 번에 API 일괄 조회 (툭툭 로딩 방지)
         all_codes = [item['code'] for item in current_list]
         batch_prices = fetch_batch_realtime_prices(all_codes)
 
