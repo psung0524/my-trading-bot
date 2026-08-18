@@ -344,7 +344,7 @@ class NaverStockScreener:
                 trading_val_백만 = clean_num(tds[6].text)
                 trading_val_억 = round(trading_val_백만 / 100, 1)
 
-                if trading_val_억 < 1000.0:
+                if trading_val_억 < 2000.0:
                     continue
 
                 market_cap_억 = cls.fetch_market_cap(code)
