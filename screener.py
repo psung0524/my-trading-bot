@@ -55,7 +55,7 @@ class NaverStockScreener:
         "000660": ("반도체/IT", "HBM/D램"), "005930": ("반도체/IT", "파운드리/메모리"),
         "017670": ("통신/인프라/지주", "AI데이터센터"), "319400": ("로봇/AI/자동화", "스마트물류"),
         "950160": ("바이오/제약", "신약개발"), "125490": ("자동차/부품/전장", "전장부품"),
-        "475150": ("원전/에너지/신재생", "풍력/신재생"), "034020": ("원전/에너지/신재생", "SMR/원전"),
+        "475150": ("원전/e너지/신재생", "풍력/신재생"), "034020": ("원전/에너지/신재생", "SMR/원전"),
         "466100": ("로봇/AI/자동화", "물류로봇"), "439090": ("로봇/AI/자동화", "로봇자동화"),
         "088350": ("금융/증권/보험", "생명보험"), "440110": ("반도체/IT", "SSD컨트롤러"),
         "253590": ("반도체/IT", "CXL테스터"), "058610": ("로봇/AI/자동화", "감속기")
@@ -290,57 +290,52 @@ class NaverStockScreener:
         market_name = "코스피" if sosok == 0 else "코스닥"
         candidates = []
 
-        url = f"https://finance.naver.com/sise/sise_quant.naver?sosok={sosok}"
-        try:
-            res = SESSION.get(url, timeout=3.0)
-            soup = BeautifulSoup(res.content.decode("cp949", errors="ignore"), "html.parser")
-            for tr in soup.select("table.type_2 tr"):
-                tds = tr.select("td")
-                if len(tds) < 10:
-                    continue
-                a_tag = tds[1].find("a")
-                if not a_tag:
-                    continue
-                name = a_tag.text.strip()
-                href = a_tag.get("href", "")
-                code = href.split("code=")[-1] if "code=" in href else ""
+        # 💡 시가총액 순위 탭(sise_market_sum.naver)을 활용해 종목명, 현재가, 거래량, 시가총액을 한 번에 안전하게 파싱
+        for page in range(1, 4):
+            url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
+            try:
+                res = SESSION.get(url, timeout=3.0)
+                soup = BeautifulSoup(res.content.decode("cp949", errors="ignore"), "html.parser")
+                for tr in soup.select("table.type_2 tr"):
+                    tds = tr.select("td")
+                    if len(tds) < 12:
+                        continue
+                    a_tag = tds[1].find("a")
+                    if not a_tag:
+                        continue
+                    name = a_tag.text.strip()
+                    href = a_tag.get("href", "")
+                    code = href.split("code=")[-1] if "code=" in href else ""
 
-                if any(x in name for x in ["스팩", "ETN", "TIGER", "KODEX", "ACE", "SOL", "RISE", "인버스", "레버리지", "우", "우B"]):
-                    continue
+                    if any(x in name for x in ["스팩", "ETN", "TIGER", "KODEX", "ACE", "SOL", "RISE", "인버스", "레버리지", "우", "우B"]):
+                        continue
 
-                curr_p = int(clean_num(tds[2].text))
-                change_rate = clean_num(tds[4].text)
-                trading_val_백만 = clean_num(tds[6].text)
-                trading_val_억 = round(trading_val_백만 / 100.0, 1)
+                    curr_p = int(clean_num(tds[2].text))
+                    change_rate = clean_num(tds[4].text)
+                    vol = clean_num(tds[9].text)
+                    cap_억 = clean_num(tds[12].text) if len(tds) > 12 else 1000.0
+                    trading_val_억 = round((curr_p * vol) / 100000000.0, 1)
 
-                if trading_val_억 < 300.0:
-                    continue
+                    if trading_val_억 < 300.0 or cap_억 < 1000.0:
+                        continue
 
-                candidates.append({
-                    "market_name": market_name,
-                    "code": str(code).zfill(6),
-                    "name": name,
-                    "curr_p": curr_p,
-                    "change_rate": change_rate,
-                    "trading_val_억": trading_val_억
-                })
-        except Exception:
-            pass
+                    candidates.append({
+                        "market_name": market_name,
+                        "code": str(code).zfill(6),
+                        "name": name,
+                        "curr_p": curr_p,
+                        "change_rate": change_rate,
+                        "trading_val_억": trading_val_억,
+                        "market_cap_억": int(cap_억)
+                    })
+            except Exception:
+                break
 
         results = []
         for item in candidates:
             code = item["code"]
             name = item["name"]
-            
-            # 시총 조회 최적화 (KNOWN_STOCKS에 있으면 크롤링 생략)
-            market_cap_억 = 1500.0
-            if code in cls.KNOWN_STOCKS:
-                market_cap_억 = 5000.0
-            else:
-                market_cap_억 = cls.fetch_market_cap(code)
-                
-            if market_cap_억 < 1000.0:
-                continue
+            market_cap_억 = item["market_cap_억"]
 
             matched = []
             cs = cls.fetch_recent_candles_summary(code)
@@ -383,7 +378,7 @@ class NaverStockScreener:
                 results.append({
                     "시장": item["market_name"], "종목코드": code, "종목명": name,
                     "섹터정보": sec_info, "현재가": item["curr_p"], "등락률(%)": change_rate,
-                    "거래대금(억원)": item["trading_val_억"], "시가총액(억원)": int(market_cap_억),
+                    "거래대금(억원)": item["trading_val_억"], "시가총액(억원)": market_cap_억,
                     "매칭전략": matched, "전략수": len(matched), "모멘텀점수": score
                 })
 
