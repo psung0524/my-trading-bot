@@ -6,7 +6,6 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from google import genai
-import streamlit.components.v1 as components
 
 from main import SamsungSecuritiesParser, TradeFIFOEngine, TradingMetricsAnalyzer, get_best_available_model
 from screener import NaverStockScreener
@@ -19,7 +18,7 @@ WATCHLIST_FILE = "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. 모바일 앱 전용 고정 하단 내비게이션 & UI 최적화 설정
+# 1. 모바일 앱 전용 상단 고정 탭 바 설정 및 CSS
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
@@ -28,40 +27,64 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 쿼리 파라미터를 통한 실시간 탭 상태 감지
+# 쿼리 파라미터를 통한 탭 상태 제어
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
 
-# CSS: 플로팅 아일랜드 바 & 배지 숨김
 st.markdown("""
 <style>
-    /* 1. Streamlit 기본 헤더/푸터/배지 CSS 숨김 */
-    #MainMenu {visibility: hidden !important; display: none !important;}
-    footer {visibility: hidden !important; display: none !important;}
-    header {visibility: hidden !important; display: none !important;}
-    .viewerBadge_container__1QSob,
-    .viewerBadge_link__1S137,
-    [data-testid="stStatusWidget"],
-    [data-testid="stDecoration"],
-    [data-testid="manage-app-button"],
-    .stDeployButton,
-    div[class*="viewerBadge"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-
-    /* 2. 본문 여백 (하단 플로팅 바 확보) */
+    /* 상단 고정 바 공간 확보 (상단 패딩 65px) */
     .block-container {
-        padding-top: 0.6rem !important;
-        padding-bottom: 95px !important;
+        padding-top: 65px !important;
+        padding-bottom: 2rem !important;
         padding-left: 0.6rem !important;
         padding-right: 0.6rem !important;
     }
     
-    .mobile-header-title {
-        font-size: 1.2rem !important;
-        font-weight: 800;
-        margin-bottom: 0.3rem;
+    #MainMenu {visibility: hidden !important;}
+    footer {visibility: hidden !important;}
+    header {visibility: hidden !important;}
+
+    /* 🚀 모바일 상단 완벽 고정 앱 바 (하단 배지와 완전 분리) */
+    .mobile-app-top-bar {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 52px !important;
+        background-color: #ffffff !important;
+        border-bottom: 1.5px solid #e2e8f0 !important;
+        display: flex !important;
+        justify-content: space-around !important;
+        align-items: center !important;
+        z-index: 999999999 !important;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.06) !important;
+    }
+    
+    .mobile-app-tab-item {
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-decoration: none !important;
+        color: #64748b !important;
+        font-size: 0.68rem !important;
+        font-weight: 600 !important;
+        height: 100% !important;
+        border-bottom: 2.5px solid transparent !important;
+        -webkit-tap-highlight-color: transparent !important;
+    }
+    
+    .mobile-app-tab-item.active {
+        color: #ff4b4b !important;
+        font-weight: 800 !important;
+        border-bottom: 2.5px solid #ff4b4b !important;
+    }
+    
+    .mobile-app-tab-icon {
+        font-size: 1.05rem;
+        margin-bottom: 1px;
     }
     
     .badge-span {
@@ -73,78 +96,39 @@ st.markdown("""
         margin-right: 3px;
         margin-bottom: 2px;
     }
-    
-    /* 3. 🚀 모바일 플로팅 아일랜드 하단 네비게이션 바 */
-    .mobile-app-bottom-bar {
-        position: fixed !important;
-        bottom: 10px !important;
-        left: 8px !important;
-        right: 8px !important;
-        width: calc(100vw - 16px) !important;
-        height: 60px !important;
-        background-color: rgba(255, 255, 255, 0.98) !important;
-        backdrop-filter: blur(10px) !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 18px !important;
-        display: flex !important;
-        justify-content: space-around !important;
-        align-items: center !important;
-        z-index: 2147483647 !important;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.12) !important;
-    }
-    
-    .mobile-app-tab-item {
-        flex: 1 !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        justify-content: center !important;
-        text-decoration: none !important;
-        color: #94a3b8 !important;
-        font-size: 0.68rem !important;
-        font-weight: 600 !important;
-        height: 100% !important;
-        -webkit-tap-highlight-color: transparent !important;
-    }
-    
-    .mobile-app-tab-item.active {
-        color: #ff4b4b !important;
-        font-weight: 800 !important;
-    }
-    
-    .mobile-app-tab-icon {
-        font-size: 1.25rem;
-        margin-bottom: 2px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# JS: Streamlit 호스트 배지 강제 삭제 스크립트
-components.html("""
-<script>
-    function removeBadges() {
-        const selectors = [
-            '#MainMenu', 'footer', 'header',
-            '[data-testid="manage-app-button"]',
-            '[data-testid="stStatusWidget"]',
-            '.viewerBadge_container__1QSob',
-            '.viewerBadge_link__1S137',
-            '.stDeployButton'
-        ];
-        selectors.forEach(s => {
-            document.querySelectorAll(s).forEach(el => el.remove());
-        });
-        
-        try {
-            window.parent.document.querySelectorAll(selectors.join(',')).forEach(el => el.remove());
-        } catch(e){}
-    }
-    setInterval(removeBadges, 300);
-</script>
-""", height=0, width=0)
+# -------------------------------------------------------------
+# 2. 상단 고정 네비게이션 바 렌더링
+# -------------------------------------------------------------
+st.markdown(f"""
+<div class="mobile-app-top-bar">
+    <a href="?tab=screener" target="_self" class="mobile-app-tab-item {'active' if active_tab=='screener' else ''}">
+        <div class="mobile-app-tab-icon">🎯</div>
+        <div>스크리너</div>
+    </a>
+    <a href="?tab=monitor" target="_self" class="mobile-app-tab-item {'active' if active_tab=='monitor' else ''}">
+        <div class="mobile-app-tab-icon">📡</div>
+        <div>포트폴리오</div>
+    </a>
+    <a href="?tab=backtest" target="_self" class="mobile-app-tab-item {'active' if active_tab=='backtest' else ''}">
+        <div class="mobile-app-tab-icon">🔬</div>
+        <div>백테스트</div>
+    </a>
+    <a href="?tab=briefing" target="_self" class="mobile-app-tab-item {'active' if active_tab=='briefing' else ''}">
+        <div class="mobile-app-tab-icon">📢</div>
+        <div>브리핑</div>
+    </a>
+    <a href="?tab=report" target="_self" class="mobile-app-tab-item {'active' if active_tab=='report' else ''}">
+        <div class="mobile-app-tab-icon">🧠</div>
+        <div>복기코칭</div>
+    </a>
+</div>
+""", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 2. 헬퍼 함수 및 설정 로드
+# 3. 헬퍼 함수 및 설정 로드
 # -------------------------------------------------------------
 def load_saved_credentials():
     creds = {
@@ -272,7 +256,7 @@ def render_stock_card(row, default_stop_pct: float, tab_prefix: str = "all"):
             st.toast(f"✅ [{row['종목명']}] 감시 등록 완료!")
 
 # -------------------------------------------------------------
-# 3. 사이드바 (시스템 설정)
+# 4. 사이드바 (시스템 설정)
 # -------------------------------------------------------------
 saved_creds = load_saved_credentials()
 
@@ -309,10 +293,8 @@ with st.sidebar:
                 st.warning("토큰과 ID를 입력하세요.")
 
 # -------------------------------------------------------------
-# 4. 상단 헤더 & 모바일 지수 대시보드
+# 5. 시장 지수 및 전략 가이드 카드
 # -------------------------------------------------------------
-st.markdown('<div class="mobile-header-title">📈 AI 트레이딩 코치 & 주도주 센터</div>', unsafe_allow_html=True)
-
 market_regime = NaverStockScreener.get_market_regime()
 safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
 
@@ -635,31 +617,3 @@ elif active_tab == "report":
                 st.warning("사이드바에서 Gemini API 키를 먼저 입력하고 [영구 저장]을 눌러주세요.")
         except Exception as e:
             st.error(f"엑셀 분석 중 오류: {str(e)}")
-
-# -------------------------------------------------------------
-# 6. 플로팅 아일랜드 뷰포트 고정 하단 내비게이션 바
-# -------------------------------------------------------------
-st.markdown(f"""
-<div class="mobile-app-bottom-bar">
-    <a href="?tab=screener" target="_self" class="mobile-app-tab-item {'active' if active_tab=='screener' else ''}">
-        <div class="mobile-app-tab-icon">🎯</div>
-        <div>스크리너</div>
-    </a>
-    <a href="?tab=monitor" target="_self" class="mobile-app-tab-item {'active' if active_tab=='monitor' else ''}">
-        <div class="mobile-app-tab-icon">📡</div>
-        <div>포트폴리오</div>
-    </a>
-    <a href="?tab=backtest" target="_self" class="mobile-app-tab-item {'active' if active_tab=='backtest' else ''}">
-        <div class="mobile-app-tab-icon">🔬</div>
-        <div>백테스트</div>
-    </a>
-    <a href="?tab=briefing" target="_self" class="mobile-app-tab-item {'active' if active_tab=='briefing' else ''}">
-        <div class="mobile-app-tab-icon">📢</div>
-        <div>브리핑</div>
-    </a>
-    <a href="?tab=report" target="_self" class="mobile-app-tab-item {'active' if active_tab=='report' else ''}">
-        <div class="mobile-app-tab-icon">🧠</div>
-        <div>복기코칭</div>
-    </a>
-</div>
-""", unsafe_allow_html=True)
