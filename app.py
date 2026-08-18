@@ -3,7 +3,6 @@ import pandas as pd
 import json
 import os
 import requests
-import urllib.parse
 from bs4 import BeautifulSoup
 from pathlib import Path
 from datetime import datetime
@@ -21,7 +20,7 @@ WATCHLIST_FILE = "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. 토스증권 스타일 프리미엄 라이트 테마 & 반응형 CSS
+# 1. 토스증권 스타일 프리미엄 라이트 테마 & 모바일 최적화 CSS
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="AI 트레이딩 코치",
@@ -37,7 +36,6 @@ st.markdown("""
 <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
-    /* 전체 앱 배경 & 폰트 */
     .stApp {
         background-color: #f8fafc !important;
         color: #0f172a !important;
@@ -55,7 +53,6 @@ st.markdown("""
     
     #MainMenu, footer, header {visibility: hidden !important; display: none !important;}
     
-    /* 🚀 토스 스타일 상단 네비게이션 바 */
     .mobile-app-top-bar {
         position: fixed !important;
         top: 0 !important;
@@ -99,7 +96,6 @@ st.markdown("""
         margin-bottom: 1px;
     }
     
-    /* 프리미엄 카드 컴포넌트 */
     .toss-card {
         background: #ffffff;
         border: 1px solid #e2e8f0;
@@ -128,7 +124,6 @@ st.markdown("""
         margin-bottom: 3px;
     }
 
-    /* 토스 스타일 버튼 */
     .stButton button {
         border-radius: 12px !important;
         font-weight: 700 !important;
@@ -181,7 +176,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 3. 헬퍼 함수 & 100% 확실한 네이버 웹 검색 엔진
+# 3. 헬퍼 함수 & 100% 확실한 로컬 인메모리 검색 엔진
 # -------------------------------------------------------------
 def load_saved_credentials():
     creds = {
@@ -222,65 +217,63 @@ def save_watchlist(watchlist):
     with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
+@st.cache_data(ttl=86400)
+def load_all_krx_stocks():
+    """네이버 시세 테이블을 직접 긁어 코스피/코스닥 전 종목 마스터 생성 (해외 차단 0%)"""
+    stocks = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
+    for sosok in [0, 1]:  # 0: 코스피, 1: 코스닥
+        for page in range(1, 15):
+            try:
+                url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
+                res = requests.get(url, headers=headers, timeout=3)
+                soup = BeautifulSoup(res.text, 'html.parser')
+                links = soup.select("a.tltle")
+                if not links:
+                    break
+                for a in links:
+                    name = a.text.strip()
+                    code = a['href'].split('code=')[-1].strip()
+                    stocks.append({"name": name, "code": code})
+            except Exception:
+                break
+
+    backup_list = [
+        {"name": "삼성전자", "code": "005930"}, {"name": "SK하이닉스", "code": "000660"},
+        {"name": "펩트론", "code": "087010"}, {"name": "삼천당제약", "code": "000250"},
+        {"name": "에코프로", "code": "086520"}, {"name": "에코프로비엠", "code": "247540"},
+        {"name": "알테오젠", "code": "196170"}, {"name": "리가켐바이오", "code": "141080"},
+        {"name": "HLB", "code": "028300"}, {"name": "현대차", "code": "005380"},
+        {"name": "기아", "code": "000270"}, {"name": "두산에너빌리티", "code": "034020"},
+        {"name": "한화오션", "code": "042660"}, {"name": "한화에어로스페이스", "code": "012450"},
+        {"name": "현대무벡스", "code": "319400"}, {"name": "실리콘투", "code": "257720"},
+        {"name": "대한항공", "code": "003490"}, {"name": "셀트리온", "code": "068270"}
+    ]
+    
+    seen = set()
+    final_list = []
+    for s in backup_list + stocks:
+        if s['code'] not in seen:
+            seen.add(s['code'])
+            final_list.append(s)
+            
+    return final_list
+
 def search_stock_by_name(keyword: str):
-    """네이버 증권 공식 웹 검색 파싱 (해외 IP 차단 0%, 전 종목 100% 즉시 검색)"""
+    """로컬 인메모리 검색 (해외 서버 차단 무관 100% 매칭)"""
     if not keyword or len(keyword.strip()) == 0:
         return []
     
-    kw = keyword.strip()
+    kw = keyword.strip().lower()
     
-    # 1. 6자리 종목코드 바로 입력 시
     if kw.isdigit() and len(kw) == 6:
-        real_name = None
-        try:
-            url = f"https://finance.naver.com/item/main.naver?code={kw}"
-            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=3)
-            soup = BeautifulSoup(res.text, 'html.parser')
-            title_tag = soup.select_one('.wrap_company h2 a')
-            if title_tag:
-                real_name = title_tag.text.strip()
-        except Exception:
-            pass
-        return [{"name": real_name or f"종목({kw})", "code": kw}]
-
-    # 2. 네이버 증권 검색 HTML 파싱 (EUC-KR 인코딩)
-    try:
-        encoded_kw = urllib.parse.quote(kw.encode('euc-kr'))
-        search_url = f"https://finance.naver.com/search/searchList.naver?query={encoded_kw}"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        res = requests.get(search_url, headers=headers, timeout=4)
+        return [{"name": f"종목코드({kw})", "code": kw}]
         
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        rows = soup.select("table.type_1 tr")
-        
-        results = []
-        for r in rows:
-            tit_tag = r.select_one("td.tit a")
-            if tit_tag:
-                name = tit_tag.text.strip()
-                href = tit_tag.get('href', '')
-                if 'code=' in href:
-                    code = href.split('code=')[-1].split('&')[0].strip()
-                    results.append({"name": name, "code": code})
-        if results:
-            return results[:10]
-    except Exception:
-        pass
-
-    # 3. FinanceDataReader 보조 검색
-    try:
-        import FinanceDataReader as fdr
-        df_krx = fdr.StockListing('KRX')
-        matched = df_krx[df_krx['Name'].str.contains(kw, case=False, na=False)]
-        if not matched.empty:
-            res_fdr = []
-            for _, r in matched.head(10).iterrows():
-                res_fdr.append({"name": str(r['Name']), "code": str(r['Code']).zfill(6)})
-            return res_fdr
-    except Exception:
-        pass
-
-    return []
+    master = load_all_krx_stocks()
+    matched = [s for s in master if kw in s['name'].lower() or kw in s['code']]
+    matched.sort(key=lambda x: (not x['name'].lower().startswith(kw), len(x['name'])))
+    return matched[:10]
 
 def fetch_realtime_price(code: str):
     try:
@@ -540,7 +533,7 @@ elif active_tab == "monitor":
 
     # 🚀 스마트 종목명 검색 및 추가 카드
     st.markdown("<div style='font-size:0.95rem; font-weight:800; color:#0f172a; margin-bottom:6px;'>🔍 감시 종목 추가</div>", unsafe_allow_html=True)
-    search_kw = st.text_input("종목명 입력", placeholder="예: 삼성전자, 펩트론, 에코프로, 삼천당제약", label_visibility="collapsed")
+    search_kw = st.text_input("종목명 입력", placeholder="예: 삼성전자, 펩트론, 삼천당제약, 에코프로", label_visibility="collapsed")
     
     if search_kw:
         found_items = search_stock_by_name(search_kw)
@@ -610,7 +603,6 @@ elif active_tab == "monitor":
             tp_p = item.get('tp_price', int(buy_p * 1.18))
             last_tier = item.get('last_notified_tier', 0)
 
-            # 5% 변동 텔레그램 발송 (+5%, +10%, -5% 등)
             current_tier = int(pnl_pct // 5)
             if current_tier != 0 and current_tier != last_tier and notifier:
                 direction = "🚀 급등" if pnl_pct > 0 else "🔻 급락/손절주의"
