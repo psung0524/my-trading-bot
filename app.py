@@ -24,7 +24,7 @@ OLD_WATCHLIST_FILE = Path(__file__).parent / "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. UI 설정 & 고급 다크 글래스모피즘 스타일링
+# 1. UI 설정 & 고품격 핀테크 라이트 테마
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="Alpha Desk Trading Engine",
@@ -67,15 +67,15 @@ st.markdown("""
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
     .stApp {
-        background: radial-gradient(circle at 10% 20%, #0d1527 0%, #080b14 100%) !important;
-        color: #f1f5f9 !important;
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
         font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
     }
     
     .block-container {
         max-width: 640px !important;
         margin: 0 auto !important;
-        padding-top: 60px !important;
+        padding-top: 56px !important;
         padding-bottom: 4rem !important;
         padding-left: 0.9rem !important;
         padding-right: 0.9rem !important;
@@ -83,21 +83,22 @@ st.markdown("""
     
     #MainMenu, footer, header { visibility: hidden !important; display: none !important; }
     
+    /* ⚡ 화이트 글래스 상단 네비게이션 바 */
     .glass-top-bar {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         width: 100vw !important;
-        height: 52px !important;
-        background: rgba(13, 21, 39, 0.88) !important;
-        backdrop-filter: blur(20px) !important;
-        -webkit-backdrop-filter: blur(20px) !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        height: 50px !important;
+        background: rgba(255, 255, 255, 0.92) !important;
+        backdrop-filter: blur(15px) !important;
+        -webkit-backdrop-filter: blur(15px) !important;
+        border-bottom: 1px solid #e2e8f0 !important;
         display: flex !important;
         justify-content: space-around !important;
         align-items: center !important;
         z-index: 999999999 !important;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35) !important;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04) !important;
     }
     
     .glass-tab-item {
@@ -107,81 +108,76 @@ st.markdown("""
         align-items: center !important;
         justify-content: center !important;
         text-decoration: none !important;
-        color: #94a3b8 !important;
-        font-size: 0.69rem !important;
+        color: #64748b !important;
+        font-size: 0.7rem !important;
         font-weight: 700 !important;
         height: 100% !important;
-        border-bottom: 2.5px solid transparent !important;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        border-bottom: 3px solid transparent !important;
+        transition: all 0.15s ease !important;
     }
     
     .glass-tab-item.active {
-        color: #38bdf8 !important;
-        font-weight: 800 !important;
-        border-bottom: 2.5px solid #38bdf8 !important;
+        color: #2563eb !important;
+        font-weight: 900 !important;
+        border-bottom: 3px solid #2563eb !important;
     }
     
     .glass-tab-icon {
         font-size: 1.1rem;
-        margin-bottom: 2px;
+        margin-bottom: 1px;
     }
     
+    /* 💎 핀테크 스타일 모던 화이트 카드 */
     .glass-card {
-        background: rgba(30, 41, 59, 0.55);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 18px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
         padding: 14px 16px;
         margin-bottom: 10px;
-        backdrop-filter: blur(12px);
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
     }
     
     .golden-glow-card {
-        background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(30, 41, 59, 0.6) 100%);
-        border: 1.5px solid rgba(245, 158, 11, 0.4);
-        border-radius: 18px;
+        background: #fffdf5;
+        border: 1.5px solid #f59e0b;
+        border-radius: 16px;
         padding: 14px 16px;
         margin-bottom: 10px;
-        box-shadow: 0 4px 20px rgba(245, 158, 11, 0.15);
+        box-shadow: 0 3px 10px rgba(245, 158, 11, 0.08);
     }
 
     .badge-chip {
         display: inline-block;
         padding: 3px 8px;
         border-radius: 6px;
-        font-size: 0.73rem;
-        font-weight: 700;
+        font-size: 0.75rem;
+        font-weight: 800;
         margin-right: 4px;
         margin-bottom: 3px;
     }
 
     .stButton button {
-        border-radius: 12px !important;
+        border-radius: 10px !important;
         font-weight: 700 !important;
         font-size: 0.82rem !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        background: rgba(30, 41, 59, 0.8) !important;
-        color: #f1f5f9 !important;
+        border: 1px solid #cbd5e1 !important;
+        background-color: #ffffff !important;
+        color: #1e293b !important;
         padding: 0.4rem 0.6rem !important;
-        transition: all 0.15s ease !important;
-    }
-    
-    .stButton button:hover {
-        border-color: #38bdf8 !important;
-        color: #38bdf8 !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
     }
     
     .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%) !important;
+        background-color: #2563eb !important;
         color: #ffffff !important;
         border: none !important;
-        box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35) !important;
+        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25) !important;
     }
 
     div[data-baseweb="input"] {
-        border-radius: 12px !important;
-        background: rgba(15, 23, 42, 0.6) !important;
-        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        border-radius: 10px !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -286,37 +282,14 @@ def save_watchlist(user_id: str, watchlist):
 # -------------------------------------------------------------
 # 4. 캐싱 & 고속 실시간 시세 폴링 엔진
 # -------------------------------------------------------------
-# 무거운 캔들 스캔은 10분 동안 캐시 유지
 @st.cache_data(ttl=600, show_spinner=False)
 def get_cached_screener_data():
     return NaverStockScreener.run_multi_strategy_screen()
 
-# 가벼운 지수 조회는 10초마다 갱신
 @st.cache_data(ttl=10, show_spinner=False)
 def get_cached_market_regime():
     return NaverStockScreener.get_market_regime()
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_naver_theme_directory():
-    theme_map = {}
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    for page in range(1, 8):
-        try:
-            url = f"https://finance.naver.com/sise/theme.naver?&page={page}"
-            res = requests.get(url, headers=headers, timeout=2.5)
-            soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-            rows = soup.select("table.type_1 td.col_type1 a")
-            if not rows:
-                break
-            for a in rows:
-                t_name = a.text.strip()
-                t_no = a['href'].split('no=')[-1].strip()
-                theme_map[t_name] = t_no
-        except Exception:
-            break
-    return theme_map
-
-# 네이버 실시간 폴링 API (0.05초 고속 조회)
 def fetch_batch_realtime_prices(codes: list) -> dict:
     if not codes:
         return {}
@@ -334,8 +307,6 @@ def fetch_batch_realtime_prices(codes: list) -> dict:
                         c_code = str(it.get('cd', '')).zfill(6)
                         nv = int(it.get('nv', 0))
                         cr = float(it.get('cr', 0.0))
-                        cv = float(it.get('cv', 0.0))
-                        # 상승/하락 부호 처리
                         if it.get('rf') in ['4', '5']:
                             cr = -abs(cr)
                         if nv > 0:
@@ -356,84 +327,13 @@ def fetch_single_stock_price(code: str):
         url = f"https://finance.naver.com/item/main.naver?code={code}"
         headers = {'User-Agent': 'Mozilla/5.0'}
         res = requests.get(url, headers=headers, timeout=1.2)
-        soup = BeautifulSoup(res.content.decode('cp949', errors='ignore'), 'html.parser')
+        soup = BeautifulSoup(res.content.decode('euc-kr', 'ignore'), 'html.parser')
         no_today = soup.select_one(".no_today .blind")
         if no_today:
             return int(no_today.text.replace(",", "").strip())
     except Exception:
         pass
     return 0
-
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
-    if not theme_no:
-        t_dir = get_naver_theme_directory()
-        theme_no = t_dir.get(theme_name, "")
-        if not theme_no:
-            for k, v in t_dir.items():
-                if theme_name in k or k in theme_name:
-                    theme_no = v
-                    break
-
-    if not theme_no:
-        return []
-
-    stocks = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    try:
-        url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
-        res = requests.get(url, headers=headers, timeout=2.5)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
-        
-        for row in soup.select("table.type_5 tr"):
-            name_tag = row.select_one("td.name a")
-            if not name_tag:
-                continue
-            name = name_tag.text.strip()
-            code = str(name_tag['href'].split('code=')[-1].strip()).zfill(6)
-            
-            num_tds = row.select("td.number")
-            curr_p, chg_rate, amount_eok = 0, 0.0, 0.0
-            
-            if len(num_tds) >= 3:
-                try:
-                    curr_p = int(num_tds[0].text.strip().replace(",", ""))
-                    chg_txt = num_tds[2].text.strip().replace("%", "").replace("+", "").replace("\n", "").replace("\t", "")
-                    chg_rate = float(chg_txt)
-                    if "nv01" in str(num_tds[2]) or "하락" in str(num_tds[2]):
-                        chg_rate = -abs(chg_rate)
-                except Exception:
-                    pass
-                    
-            if len(num_tds) >= 7:
-                try:
-                    amount_eok = round(float(num_tds[6].text.strip().replace(",", "")) / 100.0, 1)
-                except Exception:
-                    pass
-
-            if curr_p == 0:
-                curr_p = fetch_single_stock_price(code)
-
-            stocks.append({
-                "종목명": name,
-                "종목코드": code,
-                "현재가": curr_p,
-                "등락률(%)": chg_rate,
-                "거래대금(억원)": amount_eok,
-                "전략수": 0,
-                "매칭전략": ["THEME"],
-                "시가총액(억원)": 0,
-                "섹터정보": {
-                    "category": theme_name,
-                    "raw_industry": theme_name,
-                    "emoji": "🌱" if "신규상장" in theme_name else ("🌊" if "해운" in theme_name else "🔥"),
-                    "bg": "rgba(245, 158, 11, 0.15)",
-                    "color": "#f59e0b"
-                }
-            })
-    except Exception:
-        pass
-    return stocks
 
 def format_korean_money(amount_eok: float) -> str:
     if amount_eok >= 10000:
@@ -459,41 +359,41 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
     formatted_money = format_korean_money(row['거래대금(억원)'])
     is_golden = row.get('전략수', 0) >= 2
     card_class = "golden-glow-card" if is_golden else "glass-card"
-    golden_badge = "<span class='badge-chip' style='background:#f59e0b; color:#0f172a;'>🔥 다중일치</span> " if is_golden else ""
+    golden_badge = "<span class='badge-chip' style='background:#f59e0b; color:#ffffff;'>🔥 다중일치</span> " if is_golden else ""
 
     strat_badges = ""
     for s_code in row.get('매칭전략', []):
         if s_code == "THEME":
-            strat_badges += f"<span class='badge-chip' style='background:#0284c7; color:#ffffff;'>테마구성</span>"
+            strat_badges += f"<span class='badge-chip' style='background:#2563eb; color:#ffffff;'>테마구성</span>"
         else:
             info = NaverStockScreener.STRATEGIES.get(s_code, {})
-            strat_badges += f"<span class='badge-chip' style='background:#334155; color:#f1f5f9;'>{info.get('badge', s_code)}</span>"
+            strat_badges += f"<span class='badge-chip' style='background:#334155; color:#ffffff;'>{info.get('badge', s_code)}</span>"
 
     sec = row.get('섹터정보', {})
-    sec_cat = sec.get('category', '주도주')
-    raw_ind = sec.get('raw_industry', sec_cat)
+    sec_cat = sec.get('category', '기타주도주')
     sec_emoji = sec.get('emoji', '🔥')
-    sec_bg = sec.get('bg', 'rgba(255,255,255,0.08)')
-    sec_color = sec.get('color', '#38bdf8')
+    sec_bg = sec.get('bg', '#f1f5f9')
+    sec_color = sec.get('color', '#334155')
     
-    tag_label = f"{sec_emoji} {sec_cat}" if sec_cat == raw_ind else f"{sec_emoji} {sec_cat} ({raw_ind})"
+    # 괄호 외계어 완전 제거: 깔끔한 섹터명만 단독 출력
+    tag_label = f"{sec_emoji} {sec_cat}"
     theme_chip = f"<span class='badge-chip' style='background:{sec_bg}; color:{sec_color};'>{tag_label}</span>"
 
     st.markdown(f"""
     <div class='{card_class}'>
-        <div style='display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;'>
+        <div style='display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;'>
             <div>
-                {golden_badge}<strong style='font-size:1.05rem; color:#f8fafc;'>{row['종목명']}</strong> <small style='color:#94a3b8;'>{row['종목코드']}</small><br>
-                <div style='margin-top:2px;'>{theme_chip}</div>
+                {golden_badge}<strong style='font-size:1.1rem; color:#0f172a; font-weight:800;'>{row['종목명']}</strong> <span style='color:#64748b; font-size:0.85rem;'>{row['종목코드']}</span><br>
+                <div style='margin-top:4px;'>{theme_chip}</div>
             </div>
             <div style='text-align:right;'>{strat_badges}</div>
         </div>
-        <div style='margin-top: 6px; font-size: 0.95rem; color:#f1f5f9;'>
-            <strong>{curr_p:,}원</strong> <span style='color:{'#f87171' if chg_r>0 else ('#60a5fa' if chg_r<0 else '#94a3b8')}; font-weight:800;'>{chg_r:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
+        <div style='margin-top: 8px; font-size: 1.0rem; color:#0f172a;'>
+            <strong style='font-size:1.15rem;'>{curr_p:,}원</strong> <span style='color:{'#dc2626' if chg_r>0 else ('#2563eb' if chg_r<0 else '#64748b')}; font-weight:800;'>{chg_r:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
         </div>
-        <div style='margin-top: 6px; padding: 6px 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 10px; font-size: 0.78rem; color: #94a3b8;'>
-            🛑 손절: <strong style='color:#f87171;'>{calc_stop:,}원 (-6.0%)</strong> &nbsp;|&nbsp; 
-            🎯 3R익절: <strong style='color:#4ade80;'>{calc_tp_3r:,}원 (+18.0%)</strong>
+        <div style='margin-top: 8px; padding: 7px 12px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 10px; font-size: 0.82rem; color: #475569;'>
+            🛑 손절: <strong style='color:#dc2626;'>{calc_stop:,}원 (-6.0%)</strong> &nbsp;|&nbsp; 
+            🎯 3R익절: <strong style='color:#16a34a;'>{calc_tp_3r:,}원 (+18.0%)</strong>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -526,7 +426,7 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
             st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 5. 텔레그램 자동 예약 발송 스케줄러 (무인 자동화)
+# 5. 텔레그램 무인 자동 발송 스케줄러 & 상태 추적
 # -------------------------------------------------------------
 saved_creds = load_user_credentials(current_user)
 tg_t = saved_creds["tg_token"]
@@ -542,19 +442,19 @@ if tg_t and tg_c:
     sent_dict = st.session_state["auto_briefing_sent"]
     notifier = TelegramNotifier(tg_t, tg_c)
 
-    # 08:00 자동 글로벌 매크로
+    # 08:00 무인 자동 글로벌 매크로
     if now.hour == 8 and 0 <= now.minute <= 45 and sent_dict.get(f"{today_key}_0800") != True:
         msg = NaverStockScreener.generate_0800_global_briefing()
         if notifier.send_message(msg):
             sent_dict[f"{today_key}_0800"] = True
 
-    # 08:50 프리마켓
+    # 08:50 무인 자동 프리마켓
     if now.hour == 8 and 48 <= now.minute <= 59 and sent_dict.get(f"{today_key}_0850") != True:
         msg = NaverStockScreener.generate_0850_nxt_briefing()
         if notifier.send_message(msg):
             sent_dict[f"{today_key}_0850"] = True
 
-    # 09:30 장초반 주도섹터
+    # 09:30 무인 자동 장초반 주도섹터
     if now.hour == 9 and 30 <= now.minute <= 45 and sent_dict.get(f"{today_key}_0930") != True:
         msg = NaverStockScreener.generate_intraday_leader_briefing("09:30")
         if notifier.send_message(msg):
@@ -570,31 +470,31 @@ def render_live_market_dashboard():
 
     kospi_pt = str(market_regime.get('kospi_close', '2,650.00'))
     kospi_chg = str(market_regime.get('kospi_change_pct', '0.0'))
-    kospi_color = "#f87171" if not kospi_chg.startswith("-") and kospi_chg != "0.0" else ("#60a5fa" if kospi_chg.startswith("-") else "#94a3b8")
+    kospi_color = "#dc2626" if not kospi_chg.startswith("-") and kospi_chg != "0.0" else ("#2563eb" if kospi_chg.startswith("-") else "#0f172a")
 
     kosdaq_pt = str(market_regime.get('kosdaq_close', '860.50'))
     kosdaq_chg = str(market_regime.get('kosdaq_change_pct', '-0.85'))
-    kosdaq_color = "#f87171" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#60a5fa" if kosdaq_chg.startswith("-") else "#94a3b8")
+    kosdaq_color = "#dc2626" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#2563eb" if kosdaq_chg.startswith("-") else "#0f172a")
 
     st.markdown(f"""
     <div class='glass-card'>
         <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>
-            <div style='font-size:1.0rem; font-weight:800; color:#38bdf8;'>{market_regime['badge']}</div>
-            <div style='font-size:0.75rem; background:rgba(255,255,255,0.08); padding:3px 8px; border-radius:6px; font-weight:700; color:#cbd5e1;'>👤 {current_user}</div>
+            <div style='font-size:1.05rem; font-weight:800; color:#0f172a;'>{market_regime['badge']}</div>
+            <div style='font-size:0.75rem; background:#f1f5f9; padding:3px 8px; border-radius:6px; font-weight:700; color:#475569;'>👤 {current_user}</div>
         </div>
         <div style='display:flex; gap:8px; margin-bottom:8px;'>
-            <div style='flex:1; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:8px; text-align:center;'>
-                <div style='font-size:0.72rem; color:#94a3b8; font-weight:700;'>KOSPI 코스피</div>
-                <div style='font-size:1.15rem; font-weight:800; color:{kospi_color};'>{kospi_pt} <span style='font-size:0.75rem;'>({kospi_chg}%)</span></div>
+            <div style='flex:1; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:8px; text-align:center;'>
+                <div style='font-size:0.75rem; color:#64748b; font-weight:700;'>KOSPI 코스피</div>
+                <div style='font-size:1.2rem; font-weight:900; color:{kospi_color};'>{kospi_pt} <span style='font-size:0.78rem;'>({kospi_chg}%)</span></div>
             </div>
-            <div style='flex:1; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:8px; text-align:center;'>
-                <div style='font-size:0.72rem; color:#94a3b8; font-weight:700;'>KOSDAQ 코스닥</div>
-                <div style='font-size:1.15rem; font-weight:800; color:{kosdaq_color};'>{kosdaq_pt} <span style='font-size:0.75rem;'>({kosdaq_chg}%)</span></div>
+            <div style='flex:1; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:8px; text-align:center;'>
+                <div style='font-size:0.75rem; color:#64748b; font-weight:700;'>KOSDAQ 코스닥</div>
+                <div style='font-size:1.2rem; font-weight:900; color:{kosdaq_color};'>{kosdaq_pt} <span style='font-size:0.78rem;'>({kosdaq_chg}%)</span></div>
             </div>
         </div>
-        <div style='font-size:0.82rem; color:#cbd5e1; line-height:1.4;'>
+        <div style='font-size:0.85rem; color:#334155; line-height:1.4;'>
             💡 <b>가이드:</b> {market_regime['desc']}<br>
-            🎯 <b>권장 비중:</b> <span style='background:rgba(56, 189, 248, 0.15); color:#38bdf8; font-weight:800; padding:1px 6px; border-radius:4px;'>{safe_alloc}</span>
+            🎯 <b>권장 비중:</b> <span style='background:#ecfdf5; color:#047857; font-weight:800; padding:2px 7px; border-radius:5px;'>{safe_alloc}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -607,7 +507,7 @@ render_live_market_dashboard()
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
     with c_tit:
-        st.markdown("#### 🔥 주도 테마 & 메이저 주도주")
+        st.markdown("<h4 style='color:#0f172a; font-weight:800; margin:0;'>🔥 주도 테마 & 메이저 주도주</h4>", unsafe_allow_html=True)
     with c_btn:
         run_scan = st.button("🔄 실시간 스캔", use_container_width=True)
 
@@ -621,14 +521,13 @@ if active_tab == "screener":
     themes_data, all_df = get_cached_screener_data()
     top_themes = themes_data
 
-    # 화면에 표시될 종목들의 실시간 가격 일괄 조회 (0.05초)
     live_price_dict = {}
     if not all_df.empty:
         displayed_codes = all_df['종목코드'].tolist()
         live_price_dict = fetch_batch_realtime_prices(displayed_codes)
 
     if top_themes:
-        st.markdown("<div style='font-size:0.82rem; font-weight:700; color:#94a3b8; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP (클릭 시 전 종목 보기)</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP (클릭 시 전 종목 보기)</div>", unsafe_allow_html=True)
         
         t_row1_c1, t_row1_c2 = st.columns(2)
         t_row2_c1, t_row2_c2 = st.columns(2)
@@ -651,7 +550,7 @@ if active_tab == "screener":
                     st.session_state["selected_theme_no"] = theme.get('theme_no', '')
                     st.rerun()
 
-    st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
     active_theme = st.session_state.get("selected_theme_filter")
     
     if active_theme:
@@ -674,7 +573,7 @@ if active_tab == "screener":
         else:
             st.info(f"[{active_theme}] 테마에 등록된 관련 종목을 불러오는 중입니다.")
     else:
-        st.markdown("##### 🎯 5대 정밀 트레이딩 전략별 주도주")
+        st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:8px;'>🎯 5대 정밀 트레이딩 전략별 주도주</h5>", unsafe_allow_html=True)
         if all_df.empty:
             st.info("💡 현재 거래대금 및 기술적 타점에 일치하는 주도주를 탐색 중입니다.")
         else:
@@ -762,15 +661,15 @@ elif active_tab == "monitor":
             <div class='glass-card'>
                 <div style='display:flex; justify-content:space-between; align-items:center;'>
                     <div>
-                        <strong style='font-size:1.05rem; color:#f8fafc;'>{item['name']}</strong> <small style='color:#94a3b8;'>({code})</small>
+                        <strong style='font-size:1.1rem; color:#0f172a;'>{item['name']}</strong> <span style='color:#64748b; font-size:0.85rem;'>({code})</span>
                     </div>
-                    <div style='font-size:0.85rem; font-weight:800; color:{'#f87171' if pnl_pct>0 else '#60a5fa'};'>{pnl_pct:+0.2f}%</div>
+                    <div style='font-size:1.0rem; font-weight:800; color:{'#dc2626' if pnl_pct>0 else '#2563eb'};'>{pnl_pct:+0.2f}%</div>
                 </div>
-                <div style='margin-top:4px; font-size:0.92rem; color:#cbd5e1;'>
+                <div style='margin-top:6px; font-size:0.95rem; color:#334155;'>
                     매수가 {buy_p:,}원 ➡️ <b>현재가 {real_p:,}원</b>
                 </div>
-                <div style='margin-top:6px; padding: 6px 10px; background: rgba(15,23,42,0.6); border-radius: 8px; font-size:0.78rem; color:#94a3b8;'>
-                    🛑 손절: <b style='color:#f87171;'>{stop_p:,}원</b> &nbsp;|&nbsp; 🎯 3R익절: <b style='color:#4ade80;'>{tp_p:,}원</b>
+                <div style='margin-top:6px; padding: 7px 12px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; font-size:0.82rem; color:#475569;'>
+                    🛑 손절: <b style='color:#dc2626;'>{stop_p:,}원</b> &nbsp;|&nbsp; 🎯 3R익절: <b style='color:#16a34a;'>{tp_p:,}원</b>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -783,16 +682,36 @@ elif active_tab == "monitor":
     render_live_portfolio()
 
 # -------------------------------------------------------------
-# TAB 4: 4대 타임라인 텔레그램 브리핑
+# TAB 4: 4대 타임라인 텔레그램 브리핑 & 자동 발송 테스트
 # -------------------------------------------------------------
 elif active_tab == "briefing":
     st.markdown(f"#### 📢 [{current_user}] 시간대별 텔레그램 브리핑 센터")
-    st.caption("설정된 시간에 자동으로 발송되며, 아래 버튼을 눌러 즉시 전송할 수도 있습니다.")
+    st.caption("지정된 시간에 무인 자동 발송되며, 아래 시뮬레이터로 자동 발송 파이프라인을 즉시 테스트할 수 있습니다.")
+
+    # 🤖 무인 자동 발송 파이프라인 즉시 테스트 섹션
+    with st.container():
+        st.markdown("""
+        <div style='background:#eff6ff; border: 1.5px solid #3b82f6; border-radius: 14px; padding: 12px 14px; margin-bottom: 14px;'>
+            <div style='font-weight: 800; color: #1e40af; font-size: 0.95rem; margin-bottom: 4px;'>🤖 무인 자동 스케줄러 즉시 테스트</div>
+            <div style='font-size: 0.8rem; color: #1e3a8a; margin-bottom: 8px;'>버튼을 클릭하면 스케줄러가 현재 시점에 맞는 브리핑을 텔레그램으로 즉시 자동 전송합니다.</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("🚀 무인 자동 발송 파이프라인 즉시 테스트 실행", use_container_width=True, type="primary"):
+            if tg_t and tg_c:
+                notifier = TelegramNotifier(tg_t, tg_c)
+                test_msg = f"🔔 *[{current_user} 무인 자동 발송 파이프라인 검증 성공]*\n\n"
+                test_msg += NaverStockScreener.generate_intraday_leader_briefing("실시간 자동검증")
+                if notifier.send_message(test_msg):
+                    st.success("✅ 텔레그램으로 무인 자동 브리핑이 성공적으로 전송되었습니다! 스마트폰 텔레그램을 확인하세요.")
+                else:
+                    st.error("❌ 전송 실패: 설정 탭에서 봇 토큰과 채팅 ID를 확인해 주세요.")
+            else:
+                st.warning("⚠️ 설정 탭에서 텔레그램 Bot Token과 Chat ID를 먼저 저장해 주세요.")
 
     c_b1, c_b2 = st.columns(2)
     with c_b1:
-        st.markdown("<div class='glass-card'><b>🌐 08:00 글로벌 매크로</b><br><small style='color:#94a3b8;'>미 증시, 야간선물, 환율 분석</small></div>", unsafe_allow_html=True)
-        if st.button("📢 08:00 즉시 발송", use_container_width=True):
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🌐 08:00 글로벌 매크로</b><br><small style='color:#64748b;'>미 증시, 야간선물, 환율 분석</small></div>", unsafe_allow_html=True)
+        if st.button("📢 08:00 수동 발송", use_container_width=True):
             if tg_t and tg_c:
                 msg = NaverStockScreener.generate_0800_global_briefing()
                 TelegramNotifier(tg_t, tg_c).send_message(msg)
@@ -801,8 +720,8 @@ elif active_tab == "briefing":
                 st.warning("설정 탭에서 텔레그램 설정을 저장하세요.")
 
     with c_b2:
-        st.markdown("<div class='glass-card'><b>⚡ 09:30 장초반 주도섹터</b><br><small style='color:#94a3b8;'>오전 거래대금 쏠림 TOP 3</small></div>", unsafe_allow_html=True)
-        if st.button("📢 09:30 즉시 발송", use_container_width=True):
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>⚡ 09:30 장초반 주도섹터</b><br><small style='color:#64748b;'>오전 거래대금 쏠림 TOP 3</small></div>", unsafe_allow_html=True)
+        if st.button("📢 09:30 수동 발송", use_container_width=True):
             if tg_t and tg_c:
                 msg = NaverStockScreener.generate_intraday_leader_briefing("09:30")
                 TelegramNotifier(tg_t, tg_c).send_message(msg)
@@ -819,8 +738,8 @@ elif active_tab == "settings":
     with st.container():
         st.markdown(f"""
         <div class='glass-card'>
-            <div style='font-size:1.0rem; font-weight:800; color:#38bdf8; margin-bottom:4px;'>👤 사용자 계정 관리</div>
-            <div style='font-size:0.8rem; color:#94a3b8;'>현재 로그인 계정: <b>{current_user}</b></div>
+            <div style='font-size:1.05rem; font-weight:800; color:#0f172a; margin-bottom:4px;'>👤 사용자 계정 관리</div>
+            <div style='font-size:0.85rem; color:#475569;'>현재 로그인 계정: <b style='color:#2563eb;'>{current_user}</b></div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -837,8 +756,8 @@ elif active_tab == "settings":
     with st.container():
         st.markdown(f"""
         <div class='glass-card'>
-            <div style='font-size:1.0rem; font-weight:800; color:#38bdf8; margin-bottom:4px;'>🔑 [{current_user}] API & 텔레그램 연동</div>
-            <div style='font-size:0.8rem; color:#94a3b8;'>입력하신 설정값은 해당 계정에만 안전하게 개별 저장됩니다.</div>
+            <div style='font-size:1.05rem; font-weight:800; color:#0f172a; margin-bottom:4px;'>🔑 [{current_user}] API & 텔레그램 연동</div>
+            <div style='font-size:0.85rem; color:#64748b;'>입력하신 설정값은 해당 계정에만 안전하게 개별 저장됩니다.</div>
         </div>
         """, unsafe_allow_html=True)
         
