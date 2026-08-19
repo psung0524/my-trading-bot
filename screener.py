@@ -36,11 +36,11 @@ def parse_naver_change_rate(td_tag) -> float:
 
 class NaverStockScreener:
     STRATEGIES = {
-        "A": {"name": "전략 A. 메이저 수급 주도주", "badge": "💎 수급주도", "desc": "거래대금 집중 & +14.5% 이상 대량수급"},
-        "B": {"name": "전략 B. 10일선 급등 눌림목", "badge": "🎯 10일선눌림", "desc": "20일선 위 & 10일선 지지 반등 (+5%↑)"},
-        "C": {"name": "전략 C. 20일선 정석 눌림목", "badge": "🛡️ 20일선눌림", "desc": "20일 생명선 지지 후 양봉 반등 (+5%↑)"},
-        "D": {"name": "전략 D. 52주/역사적 신고가 돌파", "badge": "🚀 신고가돌파", "desc": "52주 최고가 돌파 수급 집중 (+5%↑)"},
-        "E": {"name": "전략 E. 바닥 턴어라운드", "badge": "🌱 바닥턴", "desc": "20일선 상향 돌파 안착 (+5%↑)"}
+        "A": {"name": "전략 A. 메이저 수급 주도주", "badge": "💎 수급주도", "desc": "대금 500억↑ & +14.5% 이상 대량수급"},
+        "B": {"name": "전략 B. 10일선 급등 눌림목", "badge": "🎯 10일선눌림", "desc": "대금 500억↑ & 10일선 지지 반등 (+5%↑)"},
+        "C": {"name": "전략 C. 20일선 정석 눌림목", "badge": "🛡️ 20일선눌림", "desc": "대금 500억↑ & 20일 생명선 지지 반등 (+5%↑)"},
+        "D": {"name": "전략 D. 52주/역사적 신고가 돌파", "badge": "🚀 신고가돌파", "desc": "대금 500억↑ & 52주 신고가 돌파 (+5%↑)"},
+        "E": {"name": "전략 E. 바닥 턴어라운드", "badge": "🌱 바닥턴", "desc": "대금 500억↑ & 20일선 상향 돌파 안착 (+5%↑)"}
     }
 
     SECTOR_PALETTE = {
@@ -171,13 +171,13 @@ class NaverStockScreener:
             (["항공", "해운", "육상", "물류", "여행", "호텔", "운송", "리조트", "관광", "아난티", "모두투어", "하나투어"], "항공/여행/운송"),
             (["조선", "해양", "방위", "우주", "항공우주", "방산", "한화에어로", "현대로템", "LIG넥스원"], "조선/해양/방산"),
             (["반도체", "IT", "소프트웨어", "인터넷", "전자장비", "하이닉스", "한미반도체", "CXL", "HBM", "ISC", "HPSP"], "반도체/IT"),
-            (["제약", "바이오", "생물", "헬스케어", "의료", "신약", "알테오젠", "삼천당제약", "펩트론", "HLB", "오름테라퓨틱"], "바이오/제약"),
+            (["제약", "바이오", "생물", "헬스케어", "의료", "신약", "알테오젠", "삼천당제약", "펩트론", "HLB", "오름테라퓨틱", "바이오니아"], "바이오/제약"),
             (["로봇", "자동화", "인공지능", "AI", "스마트팩토리", "레인보우", "두산로보", "엔젤로보틱스"], "로봇/AI/자동화"),
             (["원전", "전력", "에너지", "풍력", "태양광", "신재생", "SMR", "두산에너", "일진전기", "효성중공업", "비츠로셀"], "원전/에너지/신재생"),
             (["자동차", "자동차부품", "전장", "타이어", "모빌리티", "현대차", "기아", "모비스"], "자동차/부품/전장"),
             (["2차전지", "축전지", "배터리", "리튬", "양극재", "음극재", "에코프로", "포스코홀딩스", "LG엔솔"], "2차전지/배터리"),
             (["건설", "현대건설", "대우건설", "GS건설", "DL이앤씨"], "철강/금속/기계"),
-            (["디스플레이", "패널", "OLED", "LCD"], "디스플레이/전자"),
+            (["디스플레이", "패널", "OLED", "LCD", "아이원", "덱스터", "한켐"], "디스플레이/전자"),
             (["화학", "정밀화학", "석유화학", "소재"], "화학/소재/정밀"),
             (["통신", "통신방송", "지주사", "네트워크", "광케이블"], "통신/인프라/지주"),
             (["은행", "증권", "보험", "카드", "금융", "생명"], "금융/증권/보험"),
@@ -322,21 +322,15 @@ class NaverStockScreener:
         candidates = []
         seen_codes = set()
 
-        # 💡 [핵심 해결] 시총순뿐만 아니라 실시간 급등/상승률 상위 페이지까지 다각도로 크롤링
-        target_urls = [
-            f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page=1",
-            f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page=2",
-            f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page=3",
-            f"https://finance.naver.com/sise/sise_rise.naver?sosok={sosok}"
-        ]
-
-        for url in target_urls:
+        # 💡 [정확한 거래량/대금 수집] 시가총액 상위 10개 페이지(총 500개 종목)를 안정적으로 스캔
+        for page in range(1, 11):
+            url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
             try:
                 res = SESSION.get(url, timeout=3.0)
                 soup = BeautifulSoup(res.content.decode("euc-kr", errors="ignore"), "html.parser")
                 for tr in soup.select("table.type_2 tr"):
                     tds = tr.select("td")
-                    if len(tds) < 10:
+                    if len(tds) < 12:
                         continue
                     a_tag = tds[1].find("a")
                     if not a_tag:
@@ -354,11 +348,13 @@ class NaverStockScreener:
 
                     curr_p = int(clean_num(tds[2].text))
                     change_rate = parse_naver_change_rate(tds[4])
-                    vol = clean_num(tds[9].text if len(tds) > 9 else tds[5].text)
+                    
+                    # 💡 [정확한 거래량 파싱]: tds[9]가 거래량
+                    vol = clean_num(tds[9].text)
                     trading_val_억 = round((curr_p * vol) / 100000000.0, 1)
 
-                    # 💡 [필터] 등락률 +5.0% 이상 & 거래대금 50억 이상 수집
-                    if change_rate < 5.0 or (trading_val_억 < 50.0 and change_rate < 10.0):
+                    # 💡 [필수 원칙 1] 거래대금 500억 원 이상 & 당일 등락률 +5.0% 이상 필수 통과 (예외 없음)
+                    if trading_val_억 < 500.0 or change_rate < 5.0:
                         continue
 
                     seen_codes.add(code)
@@ -371,7 +367,7 @@ class NaverStockScreener:
                         "trading_val_억": trading_val_억
                     })
             except Exception:
-                continue
+                break
 
         results = []
         for item in candidates:
@@ -384,8 +380,8 @@ class NaverStockScreener:
             cs = cls.fetch_recent_candles_summary(code)
             ma20 = cs.get("ma20", 0)
             
-            # 주가가 20일선 위에 있는 종목만 통과
-            if cs.get("valid") and ma20 > 0 and curr_p < ma20 * 0.98:
+            # 💡 [필수 원칙 2] 주가가 반드시 20일선 위에 위치해야 함
+            if cs.get("valid") and ma20 > 0 and curr_p < ma20:
                 continue
 
             ma10 = cs.get("ma10", curr_p)
@@ -438,7 +434,8 @@ class NaverStockScreener:
             all_stocks = list_kospi + list_kosdaq
             if not all_stocks:
                 return themes, pd.DataFrame()
-            df = pd.DataFrame(all_stocks).sort_values(by=["등락률(%)", "거래대금(억원)"], ascending=[False, False]).reset_index(drop=True)
+            # 💡 거래대금 500억 이상 주도주 중 거래대금 순서대로 정렬
+            df = pd.DataFrame(all_stocks).sort_values(by=["거래대금(억원)", "등락률(%)"], ascending=[False, False]).reset_index(drop=True)
             return themes, df
         except Exception:
             return [], pd.DataFrame()
@@ -468,15 +465,16 @@ class NaverStockScreener:
         themes, df = cls.run_multi_strategy_screen()
         today_str = datetime.now().strftime('%Y-%m-%d')
         
-        msg = f"⚡ *[{time_label} 당일 주도 테마 & 상승률 상위 주도주 TOP 10]*\n"
-        msg += f"📅 {today_str} (+5%↑ & 20일선 위 주도주 수급 집계)\n\n"
+        msg = f"⚡ *[{time_label} 당일 거래대금 500억↑ 메이저 주도주 TOP 10]*\n"
+        msg += f"📅 {today_str} (대금 500억↑ & +5%↑ & 20일선 위)\n\n"
         
         msg += "🔥 *실시간 주도 테마 TOP 3*\n"
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 대장: `{t['leader']}`\n"
         
-        msg += f"\n💎 *{time_label} 상승률 및 메이저 수급 상위 TOP 10*\n"
-        top10 = df.head(10) if not df.empty else pd.DataFrame()
+        msg += f"\n💎 *{time_label} 거래대금 & 메이저 수급 상위 TOP 10*\n"
+        valid_df = df[(df['거래대금(억원)'] >= 500.0) & (df['등락률(%)'] >= 5.0)] if not df.empty else pd.DataFrame()
+        top10 = valid_df.head(10)
         
         if not top10.empty:
             for idx, (_, r) in enumerate(top10.iterrows()):
@@ -491,12 +489,12 @@ class NaverStockScreener:
                 p_str = f"{p_억:+.1f}억" if p_억 != 0 else "+0.0억"
                 
                 msg += f"*{idx+1}. {r['종목명']}* (`{code}`) {sec['emoji']}\n"
-                msg += f"   현재가: `{r['현재가']:,}원` (*{r['등락률(%)']:+0.2f}%*) | 대금: `{r['거래대금(억원)']:,}억`\n"
+                msg += f"   현재가: `{r['현재가']:,}원` (*{r['등락률(%)']:+0.2f}%*) | 대금: `약 {r['거래대금(억원)']:,}억`\n"
                 msg += f"   └ 수급: 외인 `{f_str}` | 기관 `{i_str}` | 프로그램 `{p_str}`\n"
         else:
-            msg += "• 현재 +5% 이상 & 20일선 위 조건을 충족하는 주도주 탐색 중...\n"
+            msg += "• 현재 거래대금 500억 이상 & +5% 이상 조건을 충족하는 메이저 주도주 탐색 중...\n"
             
-        msg += "\n💡 *수급 분석 요약*: 20일선 위에서 수급이 유입된 +5% 이상 주도 대장주 집중 대응."
+        msg += "\n💡 *수급 분석 요약*: 20일선 위에서 500억 이상 터진 메이저 대장주 집중 대응."
         return msg
 
     @classmethod
@@ -515,12 +513,13 @@ class NaverStockScreener:
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 1등 대장: `{t['leader']}`\n"
             
-        msg += "\n🏆 *오늘의 최종 주도주 (+5%↑ & 20일선 위) TOP 5 결산*\n"
-        top5 = df.head(5) if not df.empty else pd.DataFrame()
+        msg += "\n🏆 *오늘의 최종 주도주 (대금 500억↑ & +5%↑) TOP 5 결산*\n"
+        valid_df = df[(df['거래대금(억원)'] >= 500.0) & (df['등락률(%)'] >= 5.0)] if not df.empty else pd.DataFrame()
+        top5 = valid_df.head(5)
         
         for idx, (_, r) in enumerate(top5.iterrows()):
             sec = r['섹터정보']
-            msg += f"{idx+1}. *{r['종목명']}* {sec['emoji']} 마감가: `{r['현재가']:,}원` (*{r['등락률(%)']:+0.2f}%*) | `{r['거래대금(억원)']:,}억`\n"
+            msg += f"{idx+1}. *{r['종목명']}* {sec['emoji']} 마감가: `{r['현재가']:,}원` (*{r['등락률(%)']:+0.2f}%*) | `약 {r['거래대금(억원)']:,}억`\n"
             
-        msg += "\n📌 *내일장 대응 전략*: 20일선 지지력을 입증한 강한 주도 섹터의 눌림목 공략 준비."
+        msg += "\n📌 *내일장 대응 전략*: 500억 이상 강력한 자금이 유입된 주도주의 눌림목 공략 준비."
         return msg
