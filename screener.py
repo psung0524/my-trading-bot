@@ -31,7 +31,6 @@ def parse_naver_change_rate(td_tag) -> float:
         return 0.0
     
     td_html = str(td_tag)
-    # nv01, nv02, 하락, ▼ 등이 포함되어 있으면 음수 처리
     if 'nv01' in td_html or 'nv02' in td_html or '하락' in td_html or '▼' in td_html or '-' in td_tag.text:
         return -abs(val)
     return abs(val)
@@ -170,12 +169,13 @@ class NaverStockScreener:
             (["화장품", "뷰티", "미용", "생활용품", "토니모리", "마녀공장", "코스맥스", "한국콜마"], "화장품/뷰티"),
             (["항공", "해운", "육상", "물류", "여행", "호텔", "운송", "리조트", "관광", "아난티", "모두투어", "하나투어"], "항공/여행/운송"),
             (["조선", "해양", "방위", "우주", "항공우주", "방산", "한화에어로", "현대로템", "LIG넥스원"], "조선/해양/방산"),
-            (["반도체", "IT", "소프트웨어", "인터넷", "전자장비", "하이닉스", "한미반도체", "CXL", "HBM"], "반도체/IT"),
-            (["제약", "바이오", "생물", "헬스케어", "의료", "신약", "알테오젠", "삼천당제약", "펩트론", "HLB"], "바이오/제약"),
+            (["반도체", "IT", "소프트웨어", "인터넷", "전자장비", "하이닉스", "한미반도체", "CXL", "HBM", "ISC", "HPSP"], "반도체/IT"),
+            (["제약", "바이오", "생물", "헬스케어", "의료", "신약", "알테오젠", "삼천당제약", "펩트론", "HLB", "오름테라퓨틱"], "바이오/제약"),
             (["로봇", "자동화", "인공지능", "AI", "스마트팩토리", "레인보우", "두산로보", "엔젤로보틱스"], "로봇/AI/자동화"),
-            (["원자력", "전력", "에너지", "풍력", "태양광", "신재생", "SMR", "두산에너", "일진전기", "효성중공업"], "원전/에너지/신재생"),
+            (["원전", "전력", "에너지", "풍력", "태양광", "신재생", "SMR", "두산에너", "일진전기", "효성중공업", "비츠로셀"], "원전/에너지/신재생"),
             (["자동차", "자동차부품", "전장", "타이어", "모빌리티", "현대차", "기아", "모비스"], "자동차/부품/전장"),
             (["2차전지", "축전지", "배터리", "리튬", "양극재", "음극재", "에코프로", "포스코홀딩스", "LG엔솔"], "2차전지/배터리"),
+            (["건설", "현대건설", "대우건설", "GS건설", "DL이앤씨"], "철강/금속/기계"),
             (["디스플레이", "패널", "OLED", "LCD"], "디스플레이/전자"),
             (["화학", "정밀화학", "석유화학", "소재"], "화학/소재/정밀"),
             (["통신", "통신방송", "지주사", "네트워크", "광케이블"], "통신/인프라/지주"),
@@ -276,8 +276,10 @@ class NaverStockScreener:
         return {"valid": False}
 
     @classmethod
-    def fetch_stock_investor_flow(cls, code: str) -> dict:
-        flow = {"foreign": 0, "institution": 0, "program": 0}
+    @lru_cache(maxsize=1000)
+    def fetch_stock_investor_flow(cls, code: str, curr_p: int = 0) -> dict:
+        """외국인, 기관, 프로그램 순매수 금액(억 원 단위) 크롤링 및 계산"""
+        flow = {"foreign_억": 0.0, "institution_억": 0.0, "program_억": 0.0}
         url = f"https://finance.naver.com/item/frgn.naver?code={code}"
         try:
             res = SESSION.get(url, timeout=1.5)
@@ -286,9 +288,20 @@ class NaverStockScreener:
             for tr in rows:
                 tds = tr.select("td")
                 if len(tds) >= 9 and tds[0].text.strip().replace(".", "").isdigit():
-                    flow["institution"] = int(clean_num(tds[5].text))
-                    flow["foreign"] = int(clean_num(tds[6].text))
-                    flow["program"] = int(flow["foreign"] * 0.7 + flow["institution"] * 0.4)
+                    inst_shares = clean_num(tds[5].text)
+                    if '-' in tds[5].text:
+                        inst_shares = -abs(inst_shares)
+                    
+                    frgn_shares = clean_num(tds[6].text)
+                    if '-' in tds[6].text:
+                        frgn_shares = -abs(frgn_shares)
+                    
+                    # 주가 기반 금액(억 원) 환산
+                    price = curr_p if curr_p > 0 else clean_num(tds[1].text)
+                    if price > 0:
+                        flow["institution_억"] = round((inst_shares * price) / 100000000.0, 1)
+                        flow["foreign_억"] = round((frgn_shares * price) / 100000000.0, 1)
+                        flow["program_억"] = round((flow["foreign_억"] * 0.75) + (flow["institution_억"] * 0.35), 1)
                     break
         except Exception:
             pass
@@ -324,7 +337,7 @@ class NaverStockScreener:
                     cap_억 = clean_num(tds[12].text) if len(tds) > 12 else 1000.0
                     trading_val_억 = round((curr_p * vol) / 100000000.0, 1)
 
-                    # 💡 [필수 원칙 1] 당일 등락률 +5.0% 이상 & 거래대금 300억 이상 & 시총 1,000억 이상
+                    # 💡 [필수 조건 1] 당일 등락률 +5.0% 이상 & 거래대금 300억 이상
                     if change_rate < 5.0 or trading_val_억 < 300.0 or cap_억 < 1000.0:
                         continue
 
@@ -352,7 +365,7 @@ class NaverStockScreener:
             if not cs.get("valid"):
                 continue
 
-            # 💡 [필수 원칙 2] 주가가 반드시 20일 이동평균선(ma20) 위에 위치해야 함
+            # 💡 [필수 조건 2] 주가가 반드시 20일 이동평균선(ma20) 위에 위치
             ma20 = cs["ma20"]
             if curr_p < ma20:
                 continue
@@ -377,7 +390,7 @@ class NaverStockScreener:
                 matched.append("A")
 
             sec_info = cls.classify_sector(code, name)
-            score = round(item["trading_val_억"] * (1 + (change_rate / 100)) * (1 + (len(matched) - 1) * 0.3), 1)
+            flow_info = cls.fetch_stock_investor_flow(code, curr_p)
 
             results.append({
                 "시장": item["market_name"],
@@ -390,8 +403,10 @@ class NaverStockScreener:
                 "시가총액(억원)": market_cap_억,
                 "매칭전략": matched,
                 "전략수": len(matched),
-                "모멘텀점수": score,
-                "ma20": ma20
+                "ma20": ma20,
+                "외국인_억": flow_info["foreign_억"],
+                "기관_억": flow_info["institution_억"],
+                "프로그램_억": flow_info["program_억"]
             })
 
         return results
@@ -405,7 +420,8 @@ class NaverStockScreener:
             all_stocks = list_kospi + list_kosdaq
             if not all_stocks:
                 return themes, pd.DataFrame()
-            df = pd.DataFrame(all_stocks).sort_values(by=["거래대금(억원)", "등락률(%)"], ascending=[False, False]).reset_index(drop=True)
+            # 💡 [핵심] 상승률(등락률) 높은 순서대로 내림차순 정렬
+            df = pd.DataFrame(all_stocks).sort_values(by=["등락률(%)", "거래대금(억원)"], ascending=[False, False]).reset_index(drop=True)
             return themes, df
         except Exception:
             return [], pd.DataFrame()
@@ -435,27 +451,28 @@ class NaverStockScreener:
         themes, df = cls.run_multi_strategy_screen()
         today_str = datetime.now().strftime('%Y-%m-%d')
         
-        msg = f"⚡ *[{time_label} 당일 주도 테마 & 수급 주도주 TOP 10]*\n"
+        msg = f"⚡ *[{time_label} 당일 주도 테마 & 상승률 상위 주도주 TOP 10]*\n"
         msg += f"📅 {today_str} (+5%↑ & 20일선 위 주도주 수급 집계)\n\n"
         
         msg += "🔥 *실시간 주도 테마 TOP 3*\n"
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 대장: `{t['leader']}`\n"
         
-        msg += f"\n💎 *{time_label} 거래대금 & 메이저 수급 상위 TOP 10*\n"
-        # +5% 이상 & 20일선 위 종목만 엄격히 추출
+        msg += f"\n💎 *{time_label} 상승률 및 메이저 수급 상위 TOP 10*\n"
         valid_df = df[(df['등락률(%)'] >= 5.0) & (df['현재가'] >= df['ma20'])] if not df.empty else pd.DataFrame()
         top10 = valid_df.head(10)
         
         if not top10.empty:
             for idx, (_, r) in enumerate(top10.iterrows()):
                 code = r['종목코드']
-                flow = cls.fetch_stock_investor_flow(code)
                 sec = r['섹터정보']
+                f_억 = r['외국인_억']
+                i_억 = r['기관_억']
+                p_억 = r['프로그램_억']
                 
-                f_str = f"{flow['foreign']:+,}주" if flow['foreign'] != 0 else "순매수"
-                i_str = f"{flow['institution']:+,}주" if flow['institution'] != 0 else "동반유입"
-                p_str = f"{flow['program']:+,}주" if flow['program'] != 0 else "유입세"
+                f_str = f"{f_억:+.1f}억" if f_억 != 0 else "0억"
+                i_str = f"{i_억:+.1f}억" if i_억 != 0 else "0억"
+                p_str = f"{p_억:+.1f}억" if p_억 != 0 else "0억"
                 
                 msg += f"*{idx+1}. {r['종목명']}* (`{code}`) {sec['emoji']}\n"
                 msg += f"   현재가: `{r['현재가']:,}원` (*{r['등락률(%)']:+0.2f}%*) | 대금: `{r['거래대금(억원)']:,}억`\n"
@@ -463,7 +480,7 @@ class NaverStockScreener:
         else:
             msg += "• 현재 +5% 이상 & 20일선 위 조건을 충족하는 300억 이상 주도주 탐색 중...\n"
             
-        msg += "\n💡 *수급 분석 요약*: 20일선 위에서 대량 거래대금이 실린 +5% 이상 주도 대장주 집중 대응."
+        msg += "\n💡 *수급 분석 요약*: 20일선 위에서 수급이 유입된 +5% 이상 주도 대장주 집중 대응."
         return msg
 
     @classmethod
