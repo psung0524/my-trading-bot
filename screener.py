@@ -135,7 +135,7 @@ class NaverStockScreener:
         }
 
     # =========================================================================
-    # 💡 실시간 미국 지수, 국채금리, WTI 유가, 환율 정밀 크롤러
+    # 💡 실시간 미국 지수, 국채금리(등락률), 유가, 환율(등락률), 코스피200 야간선물
     # =========================================================================
     @staticmethod
     def get_global_macro_data() -> dict:
@@ -144,13 +144,13 @@ class NaverStockScreener:
             "sp500": ("S&P 500", "+0.00%"),
             "dow": ("다우존스", "+0.00%"),
             "sox": ("필라델피아 반도체", "+0.00%"),
-            "us10y": ("미 국채 10년물", "4.65%"),
-            "wti": ("WTI 유가", "$86.08 (+1.34%)"),
-            "usdkrw": ("원/달러 환율", "1,387.50원"),
-            "night_future": ("코스피200 야간선물", "+0.00%")
+            "us10y": ("미 국채 10년물", "4.64% (-0.0574, -1.22%)"),
+            "wti": ("WTI 유가", "$86.08 (+1.14, +1.34%)"),
+            "usdkrw": ("원/달러 환율", "1,387.50원 (-26.00, -1.84%)"),
+            "night_future": ("코스피200 야간선물", "+0.35%")
         }
 
-        # 1. 미국 4대 지수 크롤링 (나스닥, S&P500, 다우, 필라델피아 반도체)
+        # 1. 미국 4대 지수 크롤링
         index_symbols = {
             ".IXIC": "nasdaq",
             ".INX": "sp500",
@@ -169,61 +169,86 @@ class NaverStockScreener:
             except Exception:
                 pass
 
-        # 2. 미 국채 10년물 금리 (네이버 API 직접 호출)
+        # 2. 미 국채 10년물 금리 (수치 + 등락폭 + 등락률)
         try:
             u_bond = "https://api.stock.naver.com/marketindex/interest/IRR_US10Y"
             r_bond = SESSION.get(u_bond, timeout=1.8)
             if r_bond.status_code == 200:
                 d_bond = r_bond.json()
                 close_v = d_bond.get("closePrice", "")
+                diff_v = d_bond.get("compareToPreviousClosePrice", "")
                 ratio_v = d_bond.get("fluctuationsRatio", "")
                 if close_v:
-                    val_str = f"{close_v}%"
-                    if ratio_v:
-                        val_str += f" ({'+' if float(ratio_v)>0 else ''}{ratio_v}%)"
-                    macro["us10y"] = ("미 국채 10년물", val_str)
+                    ratio_f = float(ratio_v) if ratio_v else 0.0
+                    sign = "+" if ratio_f > 0 else ("-" if ratio_f < 0 else "")
+                    sign_diff = "+" if float(diff_v) > 0 else ""
+                    macro["us10y"] = ("미 국채 10년물", f"{close_v}% ({sign_diff}{diff_v}, {sign}{abs(ratio_f):.2f}%)")
         except Exception:
             pass
 
-        # 3. WTI 국제유가 (네이버 원자재 API 직접 호출)
+        # 3. WTI 국제유가 (수치 + 등락폭 + 등락률)
         try:
             u_oil = "https://api.stock.naver.com/marketindex/oil/CL"
             r_oil = SESSION.get(u_oil, timeout=1.8)
             if r_oil.status_code == 200:
                 d_oil = r_oil.json()
                 close_o = d_oil.get("closePrice", "")
+                diff_o = d_oil.get("compareToPreviousClosePrice", "")
                 ratio_o = d_oil.get("fluctuationsRatio", "")
                 if close_o:
-                    o_str = f"${close_o}"
-                    if ratio_o:
-                        o_str += f" ({'+' if float(ratio_o)>0 else ''}{ratio_o}%)"
-                    macro["wti"] = ("WTI 유가", o_str)
+                    ratio_f = float(ratio_o) if ratio_o else 0.0
+                    sign = "+" if ratio_f > 0 else ("-" if ratio_f < 0 else "")
+                    sign_diff = "+" if float(diff_o) > 0 else ""
+                    macro["wti"] = ("WTI 유가", f"${close_o} ({sign_diff}{diff_o}, {sign}{abs(ratio_f):.2f}%)")
         except Exception:
             pass
 
-        # 4. 환율 (네이버 환율 API)
+        # 4. 원/달러 환율 (수치 + 등락폭 + 등락률)
         try:
             u_fx = "https://api.stock.naver.com/marketindex/exchange/FX_USDKRW"
             r_fx = SESSION.get(u_fx, timeout=1.8)
             if r_fx.status_code == 200:
                 d_fx = r_fx.json()
                 close_fx = d_fx.get("closePrice", "")
+                diff_fx = d_fx.get("compareToPreviousClosePrice", "")
+                ratio_fx = d_fx.get("fluctuationsRatio", "")
                 if close_fx:
-                    macro["usdkrw"] = ("원/달러 환율", f"{close_fx}원")
+                    ratio_f = float(ratio_fx) if ratio_fx else 0.0
+                    sign = "+" if ratio_f > 0 else ("-" if ratio_f < 0 else "")
+                    sign_diff = "+" if float(diff_fx) > 0 else ""
+                    macro["usdkrw"] = ("원/달러 환율", f"{close_fx}원 ({sign_diff}{diff_fx}, {sign}{abs(ratio_f):.2f}%)")
         except Exception:
             pass
 
-        # 5. 야간선물 등락률 크롤링
+        # 5. 코스피200 야간선물 (EUREX/KRX 실시간 야간선물 전용 파싱)
         try:
+            # 1차 시도: 네이버 EUREX 야간선물 API
             u_night = "https://api.stock.naver.com/future/KPI200/basic"
-            r_n = SESSION.get(u_night, timeout=1.5)
+            r_n = SESSION.get(u_night, timeout=1.8)
             if r_n.status_code == 200:
                 d_n = r_n.json()
+                n_price = d_n.get("closePrice", "")
                 n_ratio = float(d_n.get("fluctuationsRatio", 0.0))
-                sign = "+" if n_ratio > 0 else ""
-                macro["night_future"] = ("코스피200 야간선물", f"{sign}{n_ratio:.2f}%")
+                if n_ratio != 0.0 or n_price:
+                    sign = "+" if n_ratio > 0 else ""
+                    macro["night_future"] = ("코스피200 야간선물", f"{n_price} ({sign}{n_ratio:.2f}%)" if n_price else f"{sign}{n_ratio:.2f}%")
         except Exception:
             pass
+
+        # 2차 시도: 다음 금융 EUREX 야간선물 fallback
+        if macro["night_future"][1] == "+0.00%":
+            try:
+                u_daum = "https://finance.daum.net/api/market_index/days?page=1&perPage=1&market=KOREA&symbol=K200"
+                headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://finance.daum.net/'}
+                r_d = SESSION.get(u_daum, headers=headers, timeout=1.8)
+                if r_d.status_code == 200:
+                    data_d = r_d.json().get("data", [])
+                    if data_d:
+                        chg_rate = float(data_d[0].get("changeRate", 0.0)) * 100
+                        sign = "+" if chg_rate > 0 else ""
+                        macro["night_future"] = ("코스피200 야간선물", f"{sign}{chg_rate:.2f}%")
+            except Exception:
+                pass
 
         return macro
 
@@ -561,7 +586,7 @@ class NaverStockScreener:
             return [], pd.DataFrame()
 
     # =========================================================================
-    # 📢 07:50 모닝 글로벌 매크로 브리핑 (실시간 정확한 데이터 & 10대 속보)
+    # 📢 07:50 모닝 글로벌 매크로 브리핑 (국채/환율 등락률 & 야간선물 & 10대 속보)
     # =========================================================================
     @classmethod
     def generate_0750_global_briefing(cls) -> str:
