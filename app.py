@@ -7,15 +7,27 @@ from alpha_investor.data_provider import SampleProvider
 from alpha_investor.market import classify_market
 from alpha_investor.repository import Repository
 from alpha_investor.scoring import alpha_score, build_trade_plan
+from alpha_investor.config import settings
+from alpha_investor.kis_provider import KisConfigurationError, KisMarketProvider
+from alpha_investor.market_intelligence import leader_groups, new_high_candidates, sample_market_rows
 
 st.set_page_config(page_title="Alpha Desk", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""<style>
 .block-container{max-width:1440px;padding-top:1.5rem}.hero{padding:20px 24px;border:1px solid #30415b;background:linear-gradient(100deg,#101b2e,#143545);border-radius:15px;margin-bottom:18px}.eyebrow{color:#7dd3fc;font-size:.78rem;font-weight:700;letter-spacing:.11em}.decision{font-size:1.22rem;font-weight:700;margin:.2rem 0}.muted{color:#aebdd0;font-size:.91rem}.risk{border-left:4px solid #f59e0b;padding:.6rem .9rem;background:#332712;border-radius:5px}</style>""", unsafe_allow_html=True)
 provider,repo=SampleProvider(),Repository(); snapshots=provider.snapshots(); regime=classify_market(provider.index_history()); scores={s.code:alpha_score(s,1) for s in snapshots}
+market_rows=sample_market_rows()
+
+@st.cache_data(ttl=settings.market_refresh_seconds, show_spinner=False)
+def current_indices():
+    try:
+        return KisMarketProvider().major_indices(), None
+    except (KisConfigurationError, RuntimeError, KeyError, ValueError, OSError) as exc:
+        # No estimate is ever labelled live: the UI exposes the integration state.
+        return [], str(exc)
 
 with st.sidebar:
     st.title("◈ ALPHA DESK"); st.caption("결정 지원 · 리스크 관리")
-    page=st.radio("주 메뉴",["오늘의 브리핑","후보 발굴","매매 계획","내 포트폴리오","검증·일지","연동·운영"],label_visibility="collapsed")
+    page=st.radio("주 메뉴",["오늘의 브리핑","후보 발굴","매매 계획","내 포트폴리오","검증·일지","아침 브리핑","연동·운영"],label_visibility="collapsed")
     st.divider(); st.caption("데이터 상태"); st.warning("현재: 데모 데이터",icon="⚠️"); st.caption("실서비스 전 공식 시세·공시·수급 공급자 연결이 필요합니다.")
     st.divider(); st.caption("투자 조언이 아닌 정보·리스크 관리 도구입니다.")
 
@@ -25,8 +37,15 @@ def header(title,caption=""):
     if caption: st.caption(caption)
 
 if page=="오늘의 브리핑":
+    indices,index_error=current_indices()
     st.markdown(f"<div class='hero'><div class='eyebrow'>TODAY'S DECISION BRIEF · {datetime.now():%Y-%m-%d %H:%M}</div><div class='decision'>{regime.label} — {regime.action}</div><div class='muted'>{' · '.join(regime.reasons)}</div></div>",unsafe_allow_html=True)
-    a,b,c,d=st.columns(4); a.metric("시장 체력",f"{regime.score}/100","추세·모멘텀"); b.metric("오늘 검토 후보",sum(x.total>=65 for x in scores.values()),"검증 전 후보"); c.metric("보유 위험 알림","0건","데모 기준"); d.metric("다음 점검","장 마감","15:20 리캡")
+    if indices:
+        a,b,c,d=st.columns(4)
+        for col,q in zip([a,b],indices): col.metric(q.name,f"{q.value:,.2f}",f"{q.change:+.2f} · {q.change_pct:+.2f}%")
+        c.metric("시장 체력",f"{regime.score}/100","추세·모멘텀"); d.metric("시세 기준",indices[0].as_of,"KIS 실시간 조회")
+    else:
+        a,b,c,d=st.columns(4); a.metric("시장 체력",f"{regime.score}/100","추세·모멘텀"); b.metric("오늘 검토 후보",sum(x.total>=65 for x in scores.values()),"데모 데이터"); c.metric("보유 위험 알림","0건","데모 기준"); d.metric("실시간 연동","미설정","KIS API 키 필요")
+        st.info("실시간 KOSPI/KOSDAQ는 KIS Open API 키를 `.env`에 설정하면 표시됩니다. 지금은 지수 값을 임의로 표시하지 않습니다.")
     left,right=st.columns([1.55,1])
     with left:
         header("우선순위 후보","점수는 매수 신호가 아니라 검토 순서를 정하는 설명 가능한 필터입니다.")
@@ -38,6 +57,23 @@ if page=="오늘의 브리핑":
         header("오늘의 실행 규칙"); st.markdown("<div class='risk'><b>지금 필요한 것은 종목 추가가 아니라 계획 확인입니다.</b><br>장중 급등·알림만으로 진입하지 말고, 진입가·무효화·최대 손실을 먼저 확정하세요.</div>",unsafe_allow_html=True)
         st.markdown("**체크 순서**\n\n1. 시장 국면이 전략과 맞는가  \n2. 진입 조건이 종가 기준으로 유지되는가  \n3. 손절 시 계좌 전체 손실이 허용 범위인가  \n4. 공시·실적 일정 같은 이벤트 위험은 없는가")
         st.markdown("**알림 원칙**"); st.caption("가격 도달, 손절 이탈, 1R/3R 도달, 투자 논리 이벤트만 보냅니다. ‘놓칠까 봐’ 보내는 알림은 줄입니다.")
+    st.divider()
+    themes=leader_groups(market_rows,'theme'); sectors=leader_groups(market_rows,'sector')
+    l,r=st.columns(2)
+    with l:
+        header("오늘의 주도 테마","거래대금·가중 수익률·외국인/기관/프로그램 순매수의 결합 순위입니다. 현재는 데모 표본입니다.")
+        frame=pd.DataFrame([{'테마':x['name'],'등락률':f"{x['return_pct']:+.2f}%",'거래대금':f"{x['trading_value']/1e12:.2f}조",'수급 합계':f"{(x['foreign_net_buy']+x['institution_net_buy']+x['program_net_buy'])/1e9:+.0f}억",'핵심 종목':', '.join(s.name for s in x['stocks'][:2])} for x in themes])
+        st.dataframe(frame,hide_index=True,width="stretch")
+    with r:
+        header("오늘의 주도 섹터","테마의 개별 뉴스성 급등과 업종 전체 확산을 구분합니다.")
+        frame=pd.DataFrame([{'섹터':x['name'],'등락률':f"{x['return_pct']:+.2f}%",'거래대금':f"{x['trading_value']/1e12:.2f}조",'구성 종목':x['members'],'핵심 종목':', '.join(s.name for s in x['stocks'][:2])} for x in sectors])
+        st.dataframe(frame,hide_index=True,width="stretch")
+    header("수급 주도주 · 52주 신고가 근접","수급은 장중 추정치와 장마감 확정치를 구분해 표시해야 하며, 단독 매수 주체만으로 매수를 결정하지 않습니다.")
+    flow=sorted(market_rows,key=lambda x:(x.foreign_net_buy or 0)+(x.institution_net_buy or 0)+(x.program_net_buy or 0),reverse=True)[:5]
+    high=new_high_candidates(market_rows)
+    l,r=st.columns(2)
+    with l: st.dataframe(pd.DataFrame([{'종목':x.name,'테마':x.theme,'외국인+기관+프로그램':f"{((x.foreign_net_buy or 0)+(x.institution_net_buy or 0)+(x.program_net_buy or 0))/1e9:+.0f}억",'등락률':f"{x.change_pct:+.1f}%"} for x in flow]),hide_index=True,width="stretch")
+    with r: st.dataframe(pd.DataFrame([{'종목':x.name,'테마':x.theme,'52주 고점 거리':f"{x.high_52w_distance:+.1f}%",'거래대금':f"{x.trading_value/1e12:.2f}조",'등락률':f"{x.change_pct:+.1f}%"} for x in high]),hide_index=True,width="stretch")
 
 elif page=="후보 발굴":
     header("후보 발굴","하나의 화려한 점수보다 전략 중복, 추세, 거래량, 가격 위치를 분리해 검토합니다.")
@@ -78,7 +114,19 @@ elif page=="검증·일지":
     for col,(label,value) in zip(st.columns(6),[("거래 수",m['trades']),("승률",f"{m['win_rate']}%"),("PF",m['profit_factor']),("MDD",f"{m['mdd']}%"),("기대값",f"{m['expectancy']}%"),("최대 연속 손실",m['max_consecutive_losses'])]): col.metric(label,value)
     st.warning("표시값은 데모입니다. 실제 백테스트에는 수수료·세금·슬리피지·상장폐지·당시 이용 가능 데이터·체결 가능성을 포함해야 합니다."); st.markdown("#### 거래 일지에 반드시 남길 것\n\n진입 당시 근거 · 사전 손절 · 실제 청산 이유 · 계획 준수 여부 · 감정 상태 · 개선할 규칙")
 
+elif page=="아침 브리핑":
+    from alpha_investor.briefing import load_brief, render_brief
+    header("장전 Telegram 브리핑","전날 미국시장·국채·유가·국내 야간선물과 검증된 핵심 뉴스를 한 번에 전달합니다.")
+    brief=load_brief()
+    if brief:
+        st.code(render_brief(brief),language=None)
+        st.caption("이 화면은 마지막으로 수집·검증된 스냅샷입니다. Telegram 발송은 스케줄러에서 실행합니다.")
+    else:
+        st.warning("아직 장전 브리핑 스냅샷이 없습니다.")
+        st.code("Copy-Item data/overnight_briefing.example.json data/overnight_briefing.json\npython -m alpha_investor.scheduler --morning-brief",language="powershell")
+        st.caption("예시 파일의 ‘데이터 공급자 연결 필요’ 값은 반드시 공식/라이선스 데이터 수집 작업으로 대체하세요.")
+
 else:
     header("연동·운영 체크리스트","알림부터 시작하지 말고 데이터 품질, 책임 경계, 장애 대응을 먼저 고정하세요.")
     st.markdown("**1. 공식 데이터 어댑터** — 시세/체결, 공시, 실적, 투자자별 수급을 출처와 시점까지 저장  \n**2. 이벤트 엔진** — 장전·장중·장후 작업을 분리하고 같은 이벤트의 중복 전송을 차단  \n**3. 알림 채널** — Telegram Bot API 우선. KakaoTalk은 공식 비즈니스/채널 API 또는 조직 소유 공식 게이트웨이만 사용  \n**4. 보안·감사** — 토큰은 환경변수/비밀저장소, 알림·데이터 오류는 로그와 상태 화면으로 추적  \n**5. 서비스 신뢰** — 데이터 갱신 시각, 데이터 공백, 백테스트 가정, 투자 유의문을 항상 표기")
-    st.code("streamlit run app.py\npython -m alpha_investor.scheduler",language="powershell")
+    st.code("streamlit run app.py\npython -m alpha_investor.scheduler\npython -m alpha_investor.scheduler --morning-brief",language="powershell")

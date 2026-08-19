@@ -17,5 +17,9 @@ class Settings:
     kakao_official_webhook_url: str = os.getenv("KAKAO_OFFICIAL_WEBHOOK_URL", "")
     market_open_hour: int = 9
     market_close_hour: int = 15
+    kis_app_key: str = os.getenv("KIS_APP_KEY", "")
+    kis_app_secret: str = os.getenv("KIS_APP_SECRET", "")
+    kis_base_url: str = os.getenv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
+    market_refresh_seconds: int = int(os.getenv("MARKET_REFRESH_SECONDS", "20"))
 
 settings = Settings()
