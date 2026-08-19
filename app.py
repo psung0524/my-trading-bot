@@ -89,7 +89,7 @@ st.markdown("""
         left: 0 !important;
         width: 100vw !important;
         height: 52px !important;
-        background: rgba(13, 21, 39, 0.82) !important;
+        background: rgba(13, 21, 39, 0.88) !important;
         backdrop-filter: blur(20px) !important;
         -webkit-backdrop-filter: blur(20px) !important;
         border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -284,17 +284,19 @@ def save_watchlist(user_id: str, watchlist):
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
 # -------------------------------------------------------------
-# 4. 캐싱 & 고속 시세 조회 엔진
+# 4. 캐싱 & 고속 실시간 시세 폴링 엔진
 # -------------------------------------------------------------
-@st.cache_data(ttl=15, show_spinner=False)
+# 무거운 캔들 스캔은 10분 동안 캐시 유지
+@st.cache_data(ttl=600, show_spinner=False)
 def get_cached_screener_data():
     return NaverStockScreener.run_multi_strategy_screen()
 
-@st.cache_data(ttl=15, show_spinner=False)
+# 가벼운 지수 조회는 10초마다 갱신
+@st.cache_data(ttl=10, show_spinner=False)
 def get_cached_market_regime():
     return NaverStockScreener.get_market_regime()
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_naver_theme_directory():
     theme_map = {}
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -314,6 +316,7 @@ def get_naver_theme_directory():
             break
     return theme_map
 
+# 네이버 실시간 폴링 API (0.05초 고속 조회)
 def fetch_batch_realtime_prices(codes: list) -> dict:
     if not codes:
         return {}
@@ -322,7 +325,7 @@ def fetch_batch_realtime_prices(codes: list) -> dict:
         code_str = ",".join([str(c).zfill(6) for c in codes])
         url = f"https://polling.finance.naver.com/api/realtime/domestic/stock/{code_str}"
         headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=2.5)
+        res = requests.get(url, headers=headers, timeout=1.8)
         if res.status_code == 200:
             data = res.json()
             if 'result' in data and 'areas' in data['result']:
@@ -330,24 +333,29 @@ def fetch_batch_realtime_prices(codes: list) -> dict:
                     for it in area.get('datas', []):
                         c_code = str(it.get('cd', '')).zfill(6)
                         nv = int(it.get('nv', 0))
+                        cr = float(it.get('cr', 0.0))
+                        cv = float(it.get('cv', 0.0))
+                        # 상승/하락 부호 처리
+                        if it.get('rf') in ['4', '5']:
+                            cr = -abs(cr)
                         if nv > 0:
-                            price_map[c_code] = nv
+                            price_map[c_code] = {"price": nv, "change_rate": cr}
     except Exception:
         pass
     
     for c in codes:
         c_code = str(c).zfill(6)
-        if c_code not in price_map or price_map[c_code] == 0:
+        if c_code not in price_map:
             p = fetch_single_stock_price(c_code)
             if p > 0:
-                price_map[c_code] = p
+                price_map[c_code] = {"price": p, "change_rate": 0.0}
     return price_map
 
 def fetch_single_stock_price(code: str):
     try:
         url = f"https://finance.naver.com/item/main.naver?code={code}"
         headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=1.5)
+        res = requests.get(url, headers=headers, timeout=1.2)
         soup = BeautifulSoup(res.content.decode('cp949', errors='ignore'), 'html.parser')
         no_today = soup.select_one(".no_today .blind")
         if no_today:
@@ -356,7 +364,7 @@ def fetch_single_stock_price(code: str):
         pass
     return 0
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
     if not theme_no:
         t_dir = get_naver_theme_directory()
@@ -374,7 +382,7 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
-        res = requests.get(url, headers=headers, timeout=3.5)
+        res = requests.get(url, headers=headers, timeout=2.5)
         soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
         
         for row in soup.select("table.type_5 tr"):
@@ -441,8 +449,10 @@ def show_chart_modal(code: str, name: str):
     chart_url = f"https://ssl.pstatic.net/imgfinance/chart/item/area/day/{code}.png"
     st.image(chart_url, caption="일봉 차트", use_container_width=True)
 
-def render_stock_card(row, tab_prefix: str = "all"):
-    curr_p = int(row['현재가'])
+def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_prefix: str = "all"):
+    curr_p = int(current_price_live if current_price_live is not None else row['현재가'])
+    chg_r = float(change_rate_live if change_rate_live is not None else row['등락률(%)'])
+    
     calc_stop = int(curr_p * 0.94)
     calc_tp_3r = int(curr_p * 1.18)
 
@@ -479,7 +489,7 @@ def render_stock_card(row, tab_prefix: str = "all"):
             <div style='text-align:right;'>{strat_badges}</div>
         </div>
         <div style='margin-top: 6px; font-size: 0.95rem; color:#f1f5f9;'>
-            <strong>{curr_p:,}원</strong> <span style='color:{'#f87171' if row['등락률(%)']>0 else ('#60a5fa' if row['등락률(%)']<0 else '#94a3b8')}; font-weight:800;'>{row['등락률(%)']:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
+            <strong>{curr_p:,}원</strong> <span style='color:{'#f87171' if chg_r>0 else ('#60a5fa' if chg_r<0 else '#94a3b8')}; font-weight:800;'>{chg_r:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
         </div>
         <div style='margin-top: 6px; padding: 6px 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 10px; font-size: 0.78rem; color: #94a3b8;'>
             🛑 손절: <strong style='color:#f87171;'>{calc_stop:,}원 (-6.0%)</strong> &nbsp;|&nbsp; 
@@ -516,7 +526,7 @@ def render_stock_card(row, tab_prefix: str = "all"):
             st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 5. 텔레그램 자동 예약 발송 스케줄러
+# 5. 텔레그램 자동 예약 발송 스케줄러 (무인 자동화)
 # -------------------------------------------------------------
 saved_creds = load_user_credentials(current_user)
 tg_t = saved_creds["tg_token"]
@@ -525,7 +535,6 @@ tg_c = saved_creds["tg_chat_id"]
 if tg_t and tg_c:
     now = datetime.now()
     today_key = now.strftime("%Y-%m-%d")
-    current_time_str = now.strftime("%H:%M")
     
     if "auto_briefing_sent" not in st.session_state:
         st.session_state["auto_briefing_sent"] = {}
@@ -552,44 +561,48 @@ if tg_t and tg_c:
             sent_dict[f"{today_key}_0930"] = True
 
 # -------------------------------------------------------------
-# 6. 시장 지수 대시보드
+# 6. 실시간 지수 렌더러 (10초 주기 자동 부분 갱신)
 # -------------------------------------------------------------
-market_regime = get_cached_market_regime()
-safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
+@st.fragment(run_every="10s")
+def render_live_market_dashboard():
+    market_regime = get_cached_market_regime()
+    safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
 
-kospi_pt = str(market_regime.get('kospi_close', '2,650.00'))
-kospi_chg = str(market_regime.get('kospi_change_pct', '0.0'))
-kospi_color = "#f87171" if not kospi_chg.startswith("-") and kospi_chg != "0.0" else ("#60a5fa" if kospi_chg.startswith("-") else "#94a3b8")
+    kospi_pt = str(market_regime.get('kospi_close', '2,650.00'))
+    kospi_chg = str(market_regime.get('kospi_change_pct', '0.0'))
+    kospi_color = "#f87171" if not kospi_chg.startswith("-") and kospi_chg != "0.0" else ("#60a5fa" if kospi_chg.startswith("-") else "#94a3b8")
 
-kosdaq_pt = str(market_regime.get('kosdaq_close', '860.50'))
-kosdaq_chg = str(market_regime.get('kosdaq_change_pct', '-0.85'))
-kosdaq_color = "#f87171" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#60a5fa" if kosdaq_chg.startswith("-") else "#94a3b8")
+    kosdaq_pt = str(market_regime.get('kosdaq_close', '860.50'))
+    kosdaq_chg = str(market_regime.get('kosdaq_change_pct', '-0.85'))
+    kosdaq_color = "#f87171" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#60a5fa" if kosdaq_chg.startswith("-") else "#94a3b8")
 
-st.markdown(f"""
-<div class='glass-card'>
-    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>
-        <div style='font-size:1.0rem; font-weight:800; color:#38bdf8;'>{market_regime['badge']}</div>
-        <div style='font-size:0.75rem; background:rgba(255,255,255,0.08); padding:3px 8px; border-radius:6px; font-weight:700; color:#cbd5e1;'>👤 {current_user}</div>
-    </div>
-    <div style='display:flex; gap:8px; margin-bottom:8px;'>
-        <div style='flex:1; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:8px; text-align:center;'>
-            <div style='font-size:0.72rem; color:#94a3b8; font-weight:700;'>KOSPI 코스피</div>
-            <div style='font-size:1.15rem; font-weight:800; color:{kospi_color};'>{kospi_pt} <span style='font-size:0.75rem;'>({kospi_chg}%)</span></div>
+    st.markdown(f"""
+    <div class='glass-card'>
+        <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>
+            <div style='font-size:1.0rem; font-weight:800; color:#38bdf8;'>{market_regime['badge']}</div>
+            <div style='font-size:0.75rem; background:rgba(255,255,255,0.08); padding:3px 8px; border-radius:6px; font-weight:700; color:#cbd5e1;'>👤 {current_user}</div>
         </div>
-        <div style='flex:1; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:8px; text-align:center;'>
-            <div style='font-size:0.72rem; color:#94a3b8; font-weight:700;'>KOSDAQ 코스닥</div>
-            <div style='font-size:1.15rem; font-weight:800; color:{kosdaq_color};'>{kosdaq_pt} <span style='font-size:0.75rem;'>({kosdaq_chg}%)</span></div>
+        <div style='display:flex; gap:8px; margin-bottom:8px;'>
+            <div style='flex:1; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:8px; text-align:center;'>
+                <div style='font-size:0.72rem; color:#94a3b8; font-weight:700;'>KOSPI 코스피</div>
+                <div style='font-size:1.15rem; font-weight:800; color:{kospi_color};'>{kospi_pt} <span style='font-size:0.75rem;'>({kospi_chg}%)</span></div>
+            </div>
+            <div style='flex:1; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:8px; text-align:center;'>
+                <div style='font-size:0.72rem; color:#94a3b8; font-weight:700;'>KOSDAQ 코스닥</div>
+                <div style='font-size:1.15rem; font-weight:800; color:{kosdaq_color};'>{kosdaq_pt} <span style='font-size:0.75rem;'>({kosdaq_chg}%)</span></div>
+            </div>
+        </div>
+        <div style='font-size:0.82rem; color:#cbd5e1; line-height:1.4;'>
+            💡 <b>가이드:</b> {market_regime['desc']}<br>
+            🎯 <b>권장 비중:</b> <span style='background:rgba(56, 189, 248, 0.15); color:#38bdf8; font-weight:800; padding:1px 6px; border-radius:4px;'>{safe_alloc}</span>
         </div>
     </div>
-    <div style='font-size:0.82rem; color:#cbd5e1; line-height:1.4;'>
-        💡 <b>가이드:</b> {market_regime['desc']}<br>
-        🎯 <b>권장 비중:</b> <span style='background:rgba(56, 189, 248, 0.15); color:#38bdf8; font-weight:800; padding:1px 6px; border-radius:4px;'>{safe_alloc}</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
+render_live_market_dashboard()
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너
+# TAB 1: 퀀트 스크리너 (시세만 실시간 매핑)
 # -------------------------------------------------------------
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
@@ -607,6 +620,12 @@ if active_tab == "screener":
 
     themes_data, all_df = get_cached_screener_data()
     top_themes = themes_data
+
+    # 화면에 표시될 종목들의 실시간 가격 일괄 조회 (0.05초)
+    live_price_dict = {}
+    if not all_df.empty:
+        displayed_codes = all_df['종목코드'].tolist()
+        live_price_dict = fetch_batch_realtime_prices(displayed_codes)
 
     if top_themes:
         st.markdown("<div style='font-size:0.82rem; font-weight:700; color:#94a3b8; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP (클릭 시 전 종목 보기)</div>", unsafe_allow_html=True)
@@ -669,7 +688,11 @@ if active_tab == "screener":
                     st.info("해당 조건의 종목이 없습니다.")
                     return
                 for _, r in df_subset.iterrows():
-                    render_stock_card(r, tab_prefix=tab_prefix)
+                    code_key = str(r['종목코드']).zfill(6)
+                    live_info = live_price_dict.get(code_key, {})
+                    live_p = live_info.get("price", r['현재가'])
+                    live_cr = live_info.get("change_rate", r['등락률(%)'])
+                    render_stock_card(r, current_price_live=live_p, change_rate_live=live_cr, tab_prefix=tab_prefix)
 
             with sub_tabs[0]: render_list(all_df, "all")
             with sub_tabs[1]: render_list(all_df[all_df['전략수'] >= 2], "golden")
@@ -680,16 +703,13 @@ if active_tab == "screener":
             with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오
+# TAB 2: 감시 포트폴리오 (10초 주기 실시간 부분 갱신)
 # -------------------------------------------------------------
 elif active_tab == "monitor":
     st.markdown(f"#### 📡 [{current_user}] 감시 포트폴리오 & 5% 알림 센터")
     
-    notifier = TelegramNotifier(tg_t, tg_c) if (tg_t and tg_c) else None
-
     search_kw = st.text_input("🔍 감시 종목 추가", placeholder="예: 삼성전자, 펩트론, 에코프로, 아난티")
     if search_kw:
-        found_items = [{"name": search_kw, "code": "005930"}]
         c_in1, c_in2 = st.columns(2)
         with c_in1:
             buy_price_in = st.number_input("매수가 (원)", value=10000, step=500)
@@ -719,17 +739,21 @@ elif active_tab == "monitor":
             st.toast(f"✅ [{search_kw}] 등록 완료!")
             st.rerun()
 
-    current_list = get_saved_watchlist(current_user)
-    if not current_list:
-        st.info(f"[{current_user}] 계정에 감시 중인 종목이 없습니다. 위에서 종목을 검색해 등록하세요.")
-    else:
+    @st.fragment(run_every="10s")
+    def render_live_portfolio():
+        current_list = get_saved_watchlist(current_user)
+        if not current_list:
+            st.info(f"[{current_user}] 계정에 감시 중인 종목이 없습니다. 위에서 종목을 검색해 등록하세요.")
+            return
+
         all_codes = [item['code'] for item in current_list]
         batch_prices = fetch_batch_realtime_prices(all_codes)
 
         for item in current_list:
             code = item['code']
             buy_p = item['buy_price']
-            real_p = batch_prices.get(str(code).zfill(6), buy_p)
+            live_data = batch_prices.get(str(code).zfill(6), {})
+            real_p = live_data.get("price", item.get('current_price', buy_p))
             pnl_pct = round(((real_p - buy_p) / buy_p) * 100, 2)
             stop_p = item['stop_price']
             tp_p = item.get('tp_price', int(buy_p * 1.18))
@@ -752,9 +776,11 @@ elif active_tab == "monitor":
             """, unsafe_allow_html=True)
             
             if st.button(f"🗑️ [{item['name']}] 삭제", key=f"del_{code}", use_container_width=True):
-                current_list = [s for s in current_list if s["code"] != code]
-                save_watchlist(current_user, current_list)
+                new_list = [s for s in current_list if s["code"] != code]
+                save_watchlist(current_user, new_list)
                 st.rerun()
+
+    render_live_portfolio()
 
 # -------------------------------------------------------------
 # TAB 4: 4대 타임라인 텔레그램 브리핑
@@ -830,15 +856,3 @@ elif active_tab == "settings":
                 }, f, ensure_ascii=False, indent=2)
             st.toast(f"✅ [{current_user}] 설정이 저장되었습니다!")
             st.rerun()
-
-# -------------------------------------------------------------
-# 7. 10초 주기 실시간 자동 리프레시 엔진 (JS Injection)
-# -------------------------------------------------------------
-components.html("""
-<script>
-    setTimeout(function() {
-        window.parent.document.querySelector('button[kind="secondary"]') && 
-        window.parent.location.reload();
-    }, 10000);
-</script>
-""", height=0, width=0)
