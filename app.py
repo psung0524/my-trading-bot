@@ -83,7 +83,6 @@ st.markdown("""
     
     #MainMenu, footer, header { visibility: hidden !important; display: none !important; }
     
-    /* ⚡ 프리미엄 상단 플로팅 네비게이션 바 */
     .glass-top-bar {
         position: fixed !important;
         top: 0 !important;
@@ -127,7 +126,6 @@ st.markdown("""
         margin-bottom: 2px;
     }
     
-    /* 💎 글래스모피즘 메인 카드 */
     .glass-card {
         background: rgba(30, 41, 59, 0.55);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -518,7 +516,7 @@ def render_stock_card(row, tab_prefix: str = "all"):
             st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 5. 텔레그램 자동 예약 발송 스케줄러 (무인 자동화)
+# 5. 텔레그램 자동 예약 발송 스케줄러
 # -------------------------------------------------------------
 saved_creds = load_user_credentials(current_user)
 tg_t = saved_creds["tg_token"]
@@ -537,19 +535,19 @@ if tg_t and tg_c:
 
     # 08:00 자동 글로벌 매크로
     if now.hour == 8 and 0 <= now.minute <= 45 and sent_dict.get(f"{today_key}_0800") != True:
-        msg = NaverStockScreener.generate_0800_global_briefing()[cite: 1]
+        msg = NaverStockScreener.generate_0800_global_briefing()
         if notifier.send_message(msg):
             sent_dict[f"{today_key}_0800"] = True
 
     # 08:50 프리마켓
     if now.hour == 8 and 48 <= now.minute <= 59 and sent_dict.get(f"{today_key}_0850") != True:
-        msg = NaverStockScreener.generate_0850_nxt_briefing()[cite: 1]
+        msg = NaverStockScreener.generate_0850_nxt_briefing()
         if notifier.send_message(msg):
             sent_dict[f"{today_key}_0850"] = True
 
     # 09:30 장초반 주도섹터
     if now.hour == 9 and 30 <= now.minute <= 45 and sent_dict.get(f"{today_key}_0930") != True:
-        msg = NaverStockScreener.generate_intraday_leader_briefing("09:30")[cite: 1]
+        msg = NaverStockScreener.generate_intraday_leader_briefing("09:30")
         if notifier.send_message(msg):
             sent_dict[f"{today_key}_0930"] = True
 
@@ -557,14 +555,14 @@ if tg_t and tg_c:
 # 6. 시장 지수 대시보드
 # -------------------------------------------------------------
 market_regime = get_cached_market_regime()
-safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")[cite: 1]
+safe_alloc = market_regime.get('alloc_guide', '주식 50% / 현금 50%').replace("~~", " ~ ").replace("~", "～")
 
-kospi_pt = str(market_regime.get('kospi_close', '2,650.00'))[cite: 1]
-kospi_chg = str(market_regime.get('kospi_change_pct', '0.0'))[cite: 1]
+kospi_pt = str(market_regime.get('kospi_close', '2,650.00'))
+kospi_chg = str(market_regime.get('kospi_change_pct', '0.0'))
 kospi_color = "#f87171" if not kospi_chg.startswith("-") and kospi_chg != "0.0" else ("#60a5fa" if kospi_chg.startswith("-") else "#94a3b8")
 
-kosdaq_pt = str(market_regime.get('kosdaq_close', '860.50'))[cite: 1]
-kosdaq_chg = str(market_regime.get('kosdaq_change_pct', '-0.85'))[cite: 1]
+kosdaq_pt = str(market_regime.get('kosdaq_close', '860.50'))
+kosdaq_chg = str(market_regime.get('kosdaq_change_pct', '-0.85'))
 kosdaq_color = "#f87171" if not kosdaq_chg.startswith("-") and kosdaq_chg != "0.0" else ("#60a5fa" if kosdaq_chg.startswith("-") else "#94a3b8")
 
 st.markdown(f"""
@@ -770,7 +768,7 @@ elif active_tab == "briefing":
         st.markdown("<div class='glass-card'><b>🌐 08:00 글로벌 매크로</b><br><small style='color:#94a3b8;'>미 증시, 야간선물, 환율 분석</small></div>", unsafe_allow_html=True)
         if st.button("📢 08:00 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
-                msg = NaverStockScreener.generate_0800_global_briefing()[cite: 1]
+                msg = NaverStockScreener.generate_0800_global_briefing()
                 TelegramNotifier(tg_t, tg_c).send_message(msg)
                 st.success("발송 완료!")
             else:
@@ -780,7 +778,7 @@ elif active_tab == "briefing":
         st.markdown("<div class='glass-card'><b>⚡ 09:30 장초반 주도섹터</b><br><small style='color:#94a3b8;'>오전 거래대금 쏠림 TOP 3</small></div>", unsafe_allow_html=True)
         if st.button("📢 09:30 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
-                msg = NaverStockScreener.generate_intraday_leader_briefing("09:30")[cite: 1]
+                msg = NaverStockScreener.generate_intraday_leader_briefing("09:30")
                 TelegramNotifier(tg_t, tg_c).send_message(msg)
                 st.success("발송 완료!")
             else:
