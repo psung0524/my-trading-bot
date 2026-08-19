@@ -6,7 +6,7 @@ import requests
 import urllib.parse
 from bs4 import BeautifulSoup
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from google import genai
 import streamlit.components.v1 as components
@@ -36,25 +36,25 @@ st.set_page_config(
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
 
-# 로컬 스토리지 계정 동기화
+# 계정 유실 방지: spark 등 특정 계정 우선 유지
 url_user = query_params.get("user", "").strip()
 if "current_user" not in st.session_state:
-    st.session_state["current_user"] = url_user if url_user else "default"
+    st.session_state["current_user"] = url_user if (url_user and url_user != "default") else "spark"
 
 current_user = st.session_state["current_user"]
 
-# 브라우저 영구 계정 기억 스크립트
+# 브라우저 영구 계정 기억 스크립트 (spark 영구 고정 지원)
 components.html(f"""
 <script>
     const currentParam = new URLSearchParams(window.parent.location.search).get("user");
-    const activeUser = "{current_user}";
+    let activeUser = "{current_user}";
     
-    if (activeUser !== "default" && activeUser !== "") {{
+    if (activeUser && activeUser !== "default") {{
         localStorage.setItem("alpha_trader_id", activeUser);
     }}
     
-    const savedUser = localStorage.getItem("alpha_trader_id");
-    if (savedUser && (!currentParam || currentParam === "default") && savedUser !== activeUser) {{
+    const savedUser = localStorage.getItem("alpha_trader_id") || "spark";
+    if ((!currentParam || currentParam === "default") && savedUser !== currentParam) {{
         const url = new URL(window.parent.location.href);
         url.searchParams.set("user", savedUser);
         window.parent.location.href = url.toString();
@@ -83,14 +83,13 @@ st.markdown("""
     
     #MainMenu, footer, header { visibility: hidden !important; display: none !important; }
     
-    /* ⚡ 화이트 글래스 상단 네비게이션 바 */
     .glass-top-bar {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         width: 100vw !important;
         height: 50px !important;
-        background: rgba(255, 255, 255, 0.92) !important;
+        background: rgba(255, 255, 255, 0.94) !important;
         backdrop-filter: blur(15px) !important;
         -webkit-backdrop-filter: blur(15px) !important;
         border-bottom: 1px solid #e2e8f0 !important;
@@ -127,7 +126,6 @@ st.markdown("""
         margin-bottom: 1px;
     }
     
-    /* 💎 핀테크 스타일 모던 화이트 카드 */
     .glass-card {
         background: #ffffff;
         border: 1px solid #e2e8f0;
@@ -164,20 +162,17 @@ st.markdown("""
         background-color: #ffffff !important;
         color: #1e293b !important;
         padding: 0.4rem 0.6rem !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
     }
     
     .stButton button[kind="primary"] {
         background-color: #2563eb !important;
         color: #ffffff !important;
         border: none !important;
-        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25) !important;
     }
 
     div[data-baseweb="input"] {
         border-radius: 10px !important;
         background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -218,11 +213,11 @@ st.markdown(f"""
 # 3. 사용자별 설정 & 파일 관리 함수
 # -------------------------------------------------------------
 def get_user_config_file(user_id: str) -> Path:
-    safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "default"
+    safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "spark"
     return CONFIG_DIR / f"config_{safe_name}.json"
 
 def get_user_watchlist_file(user_id: str) -> Path:
-    safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "default"
+    safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "spark"
     return CONFIG_DIR / f"watchlist_{safe_name}.json"
 
 def load_user_credentials(user_id: str):
@@ -231,43 +226,59 @@ def load_user_credentials(user_id: str):
         "tg_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
         "tg_chat_id": os.getenv("TELEGRAM_CHAT_ID", "")
     }
+    
+    # 1. 대상 사용자 파일 확인
     cfg_file = get_user_config_file(user_id)
-    if not cfg_file.exists() and OLD_CONFIG_FILE.exists():
-        try:
-            with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                with open(cfg_file, "w", encoding="utf-8") as wf:
-                    json.dump(data, wf, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+    
+    # 2. 없으면 spark 또는 config.json 등에서 복원
+    if not cfg_file.exists():
+        fallback_files = [CONFIG_DIR / "config_spark.json", OLD_CONFIG_FILE, CONFIG_DIR / "config_default.json"]
+        for fb in fallback_files:
+            if fb.exists():
+                try:
+                    with open(fb, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        with open(cfg_file, "w", encoding="utf-8") as wf:
+                            json.dump(data, wf, ensure_ascii=False, indent=2)
+                        break
+                except Exception:
+                    pass
 
     if cfg_file.exists():
         try:
             with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                creds["gemini_api_key"] = data.get("gemini_api_key", "")
-                creds["tg_token"] = data.get("tg_token", "")
-                creds["tg_chat_id"] = data.get("tg_chat_id", "")
+                creds["gemini_api_key"] = data.get("gemini_api_key", creds["gemini_api_key"])
+                creds["tg_token"] = data.get("tg_token", creds["tg_token"])
+                creds["tg_chat_id"] = data.get("tg_chat_id", creds["tg_chat_id"])
         except Exception:
             pass
     return creds
 
-def get_saved_watchlist(user_id: str):
-    w_file = get_user_watchlist_file(user_id)
-    if not w_file.exists() and OLD_WATCHLIST_FILE.exists():
+def get_all_registered_configs() -> list:
+    """등록된 모든 계정(spark 등)의 설정 반환"""
+    configs = []
+    seen_chats = set()
+    for f_path in CONFIG_DIR.glob("config_*.json"):
         try:
-            with open(OLD_WATCHLIST_FILE, "r", encoding="utf-8") as f:
-                old_data = json.load(f)
-                with open(w_file, "w", encoding="utf-8") as wf:
-                    json.dump(old_data, wf, ensure_ascii=False, indent=2)
-                return old_data
+            with open(f_path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                token = d.get("tg_token", "").strip()
+                chat = d.get("tg_chat_id", "").strip()
+                if token and chat and chat not in seen_chats:
+                    seen_chats.add(chat)
+                    u_id = f_path.stem.replace("config_", "")
+                    configs.append({"user_id": u_id, "token": token, "chat_id": chat})
         except Exception:
             pass
+    return configs
 
+def get_saved_watchlist(user_id: str):
+    w_file = get_user_watchlist_file(user_id)
     if not w_file.exists():
-        with open(w_file, "w", encoding="utf-8") as f:
-            json.dump([], f)
-        return []
+        fallback = CONFIG_DIR / "watchlist_spark.json"
+        if fallback.exists():
+            w_file = fallback
     try:
         with open(w_file, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -313,27 +324,7 @@ def fetch_batch_realtime_prices(codes: list) -> dict:
                             price_map[c_code] = {"price": nv, "change_rate": cr}
     except Exception:
         pass
-    
-    for c in codes:
-        c_code = str(c).zfill(6)
-        if c_code not in price_map:
-            p = fetch_single_stock_price(c_code)
-            if p > 0:
-                price_map[c_code] = {"price": p, "change_rate": 0.0}
     return price_map
-
-def fetch_single_stock_price(code: str):
-    try:
-        url = f"https://finance.naver.com/item/main.naver?code={code}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=1.2)
-        soup = BeautifulSoup(res.content.decode('euc-kr', 'ignore'), 'html.parser')
-        no_today = soup.select_one(".no_today .blind")
-        if no_today:
-            return int(no_today.text.replace(",", "").strip())
-    except Exception:
-        pass
-    return 0
 
 def format_korean_money(amount_eok: float) -> str:
     if amount_eok >= 10000:
@@ -353,9 +344,6 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
     curr_p = int(current_price_live if current_price_live is not None else row['현재가'])
     chg_r = float(change_rate_live if change_rate_live is not None else row['등락률(%)'])
     
-    calc_stop = int(curr_p * 0.94)
-    calc_tp_3r = int(curr_p * 1.18)
-
     formatted_money = format_korean_money(row['거래대금(억원)'])
     is_golden = row.get('전략수', 0) >= 2
     card_class = "golden-glow-card" if is_golden else "glass-card"
@@ -375,7 +363,6 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
     sec_bg = sec.get('bg', '#f1f5f9')
     sec_color = sec.get('color', '#334155')
     
-    # 괄호 외계어 완전 제거: 깔끔한 섹터명만 단독 출력
     tag_label = f"{sec_emoji} {sec_cat}"
     theme_chip = f"<span class='badge-chip' style='background:{sec_bg}; color:{sec_color};'>{tag_label}</span>"
 
@@ -390,10 +377,6 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
         </div>
         <div style='margin-top: 8px; font-size: 1.0rem; color:#0f172a;'>
             <strong style='font-size:1.15rem;'>{curr_p:,}원</strong> <span style='color:{'#dc2626' if chg_r>0 else ('#2563eb' if chg_r<0 else '#64748b')}; font-weight:800;'>{chg_r:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
-        </div>
-        <div style='margin-top: 8px; padding: 7px 12px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 10px; font-size: 0.82rem; color: #475569;'>
-            🛑 손절: <strong style='color:#dc2626;'>{calc_stop:,}원 (-6.0%)</strong> &nbsp;|&nbsp; 
-            🎯 3R익절: <strong style='color:#16a34a;'>{calc_tp_3r:,}원 (+18.0%)</strong>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -413,10 +396,6 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
                 "buy_price": curr_p,
                 "current_price": curr_p,
                 "pnl_pct": 0.0,
-                "stop_price": calc_stop,
-                "stop_pct": -6.0,
-                "tp_price": calc_tp_3r,
-                "tp_pct": 18.0,
                 "last_notified_tier": 0,
                 "theme": f"{sec_emoji} {sec_cat}",
                 "strategy": ",".join(row.get('매칭전략', ['THEME'])),
@@ -426,39 +405,46 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
             st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 5. 텔레그램 무인 자동 발송 스케줄러 & 상태 추적
+# 5. 텔레그램 한국 시간(KST) 기준 무인 자동 발송 스케줄러
 # -------------------------------------------------------------
-saved_creds = load_user_credentials(current_user)
-tg_t = saved_creds["tg_token"]
-tg_c = saved_creds["tg_chat_id"]
+kst = timezone(timedelta(hours=9))
+now_kst = datetime.now(kst)
+today_key = now_kst.strftime("%Y-%m-%d")
+hour_min = now_kst.strftime("%H:%M")
 
-if tg_t and tg_c:
-    now = datetime.now()
-    today_key = now.strftime("%Y-%m-%d")
-    
-    if "auto_briefing_sent" not in st.session_state:
-        st.session_state["auto_briefing_sent"] = {}
-        
-    sent_dict = st.session_state["auto_briefing_sent"]
-    notifier = TelegramNotifier(tg_t, tg_c)
+if "auto_briefing_sent" not in st.session_state:
+    st.session_state["auto_briefing_sent"] = {}
+sent_dict = st.session_state["auto_briefing_sent"]
 
-    # 08:00 무인 자동 글로벌 매크로
-    if now.hour == 8 and 0 <= now.minute <= 45 and sent_dict.get(f"{today_key}_0800") != True:
-        msg = NaverStockScreener.generate_0800_global_briefing()
-        if notifier.send_message(msg):
-            sent_dict[f"{today_key}_0800"] = True
+# 모든 등록된 사용자 계정(spark 등)으로 일괄 자동 전송
+active_configs = get_all_registered_configs()
+if not active_configs:
+    saved_creds = load_user_credentials(current_user)
+    if saved_creds["tg_token"] and saved_creds["tg_chat_id"]:
+        active_configs = [{"user_id": current_user, "token": saved_creds["tg_token"], "chat_id": saved_creds["tg_chat_id"]}]
 
-    # 08:50 무인 자동 프리마켓
-    if now.hour == 8 and 48 <= now.minute <= 59 and sent_dict.get(f"{today_key}_0850") != True:
-        msg = NaverStockScreener.generate_0850_nxt_briefing()
-        if notifier.send_message(msg):
-            sent_dict[f"{today_key}_0850"] = True
+def broadcast_briefing(task_key: str, message_builder):
+    if sent_dict.get(f"{today_key}_{task_key}") != True:
+        msg = message_builder()
+        for cfg in active_configs:
+            TelegramNotifier(cfg["token"], cfg["chat_id"]).send_message(msg)
+        sent_dict[f"{today_key}_{task_key}"] = True
 
-    # 09:30 무인 자동 장초반 주도섹터
-    if now.hour == 9 and 30 <= now.minute <= 45 and sent_dict.get(f"{today_key}_0930") != True:
-        msg = NaverStockScreener.generate_intraday_leader_briefing("09:30")
-        if notifier.send_message(msg):
-            sent_dict[f"{today_key}_0930"] = True
+# 1) 07:50 글로벌 매크로 & 야간선물
+if (now_kst.hour == 7 and now_kst.minute >= 50) or (now_kst.hour == 8 and now_kst.minute < 30):
+    broadcast_briefing("0750", NaverStockScreener.generate_0750_global_briefing)
+
+# 2) 09:30 실시간 주도 테마 & 수급 TOP 10
+if now_kst.hour == 9 and 30 <= now_kst.minute <= 55:
+    broadcast_briefing("0930", lambda: NaverStockScreener.generate_supply_leader_top10_briefing("09:30"))
+
+# 3) 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)
+if now_kst.hour == 10 and 0 <= now_kst.minute <= 25:
+    broadcast_briefing("1000", lambda: NaverStockScreener.generate_supply_leader_top10_briefing("10:00"))
+
+# 4) 15:30 장 마감 종합 결산
+if (now_kst.hour == 15 and now_kst.minute >= 30) or (now_kst.hour == 16 and now_kst.minute <= 30):
+    broadcast_briefing("1530", NaverStockScreener.generate_1530_closing_briefing)
 
 # -------------------------------------------------------------
 # 6. 실시간 지수 렌더러 (10초 주기 자동 부분 갱신)
@@ -480,7 +466,7 @@ def render_live_market_dashboard():
     <div class='glass-card'>
         <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>
             <div style='font-size:1.05rem; font-weight:800; color:#0f172a;'>{market_regime['badge']}</div>
-            <div style='font-size:0.75rem; background:#f1f5f9; padding:3px 8px; border-radius:6px; font-weight:700; color:#475569;'>👤 {current_user}</div>
+            <div style='font-size:0.75rem; background:#f1f5f9; padding:3px 8px; border-radius:6px; font-weight:700; color:#475569;'>👤 {current_user} (KST {hour_min})</div>
         </div>
         <div style='display:flex; gap:8px; margin-bottom:8px;'>
             <div style='flex:1; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:8px; text-align:center;'>
@@ -511,9 +497,6 @@ if active_tab == "screener":
     with c_btn:
         run_scan = st.button("🔄 실시간 스캔", use_container_width=True)
 
-    if "selected_theme_filter" not in st.session_state:
-        st.session_state["selected_theme_filter"] = None
-
     if run_scan:
         st.cache_data.clear()
         st.rerun()
@@ -527,85 +510,50 @@ if active_tab == "screener":
         live_price_dict = fetch_batch_realtime_prices(displayed_codes)
 
     if top_themes:
-        st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP (클릭 시 전 종목 보기)</div>", unsafe_allow_html=True)
-        
+        st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP</div>", unsafe_allow_html=True)
         t_row1_c1, t_row1_c2 = st.columns(2)
         t_row2_c1, t_row2_c2 = st.columns(2)
         grid_cols = [t_row1_c1, t_row1_c2, t_row2_c1, t_row2_c2]
         
         for i, theme in enumerate(top_themes[:4]):
             t_name = theme['theme_name']
-            is_active = st.session_state["selected_theme_filter"] == t_name
-            btn_label = f"{'✅ ' if is_active else ''}{t_name} (+{theme['change_rate']}%)"
-            
+            btn_label = f"{t_name} (+{theme['change_rate']}%)"
             with grid_cols[i]:
-                if st.button(
-                    btn_label, 
-                    key=f"theme_btn_{i}", 
-                    use_container_width=True, 
-                    type="primary" if is_active else "secondary",
-                    help=f"대장주: {theme['leader']}"
-                ):
-                    st.session_state["selected_theme_filter"] = None if is_active else t_name
-                    st.session_state["selected_theme_no"] = theme.get('theme_no', '')
-                    st.rerun()
+                st.button(btn_label, key=f"theme_btn_{i}", use_container_width=True, help=f"대장주: {theme['leader']}")
 
-    st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
-    active_theme = st.session_state.get("selected_theme_filter")
-    
-    if active_theme:
-        target_theme_data = next((t for t in top_themes if t["theme_name"] == active_theme), None)
-        theme_no = target_theme_data.get('theme_no', '') if target_theme_data else ''
-        
-        with st.spinner(f"[{active_theme}] 테마 관련주 집계 중..."):
-            theme_stocks = fetch_theme_all_stocks(active_theme, theme_no)
-            
-        c_head, c_clear = st.columns([3, 1])
-        c_head.markdown(f"##### 🎯 [{active_theme}] 전체 관련주 ({len(theme_stocks)}종목)")
-        if c_clear.button("❌ 전체보기", use_container_width=True):
-            st.session_state["selected_theme_filter"] = None
-            st.rerun()
-
-        if theme_stocks:
-            df_theme = pd.DataFrame(theme_stocks)
-            for _, r in df_theme.iterrows():
-                render_stock_card(r, tab_prefix="theme_all")
-        else:
-            st.info(f"[{active_theme}] 테마에 등록된 관련 종목을 불러오는 중입니다.")
+    st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 트레이딩 전략별 주도주</h5>", unsafe_allow_html=True)
+    if all_df.empty:
+        st.info("💡 현재 거래대금 및 기술적 타점에 일치하는 주도주를 탐색 중입니다.")
     else:
-        st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:8px;'>🎯 5대 정밀 트레이딩 전략별 주도주</h5>", unsafe_allow_html=True)
-        if all_df.empty:
-            st.info("💡 현재 거래대금 및 기술적 타점에 일치하는 주도주를 탐색 중입니다.")
-        else:
-            sub_tabs = st.tabs([
-                f"전체({len(all_df)})",
-                f"다중일치({len(all_df[all_df['전략수'] >= 2])})",
-                "A.수급", "B.10일선", "C.20일선", "D.신고가", "E.바닥턴"
-            ])
-            def render_list(df_subset, tab_prefix: str):
-                if df_subset.empty:
-                    st.info("해당 조건의 종목이 없습니다.")
-                    return
-                for _, r in df_subset.iterrows():
-                    code_key = str(r['종목코드']).zfill(6)
-                    live_info = live_price_dict.get(code_key, {})
-                    live_p = live_info.get("price", r['현재가'])
-                    live_cr = live_info.get("change_rate", r['등락률(%)'])
-                    render_stock_card(r, current_price_live=live_p, change_rate_live=live_cr, tab_prefix=tab_prefix)
+        sub_tabs = st.tabs([
+            f"전체({len(all_df)})",
+            f"다중일치({len(all_df[all_df['전략수'] >= 2])})",
+            "A.수급", "B.10일선", "C.20일선", "D.신고가", "E.바닥턴"
+        ])
+        def render_list(df_subset, tab_prefix: str):
+            if df_subset.empty:
+                st.info("해당 조건의 종목이 없습니다.")
+                return
+            for _, r in df_subset.iterrows():
+                code_key = str(r['종목코드']).zfill(6)
+                live_info = live_price_dict.get(code_key, {})
+                live_p = live_info.get("price", r['현재가'])
+                live_cr = live_info.get("change_rate", r['등락률(%)'])
+                render_stock_card(r, current_price_live=live_p, change_rate_live=live_cr, tab_prefix=tab_prefix)
 
-            with sub_tabs[0]: render_list(all_df, "all")
-            with sub_tabs[1]: render_list(all_df[all_df['전략수'] >= 2], "golden")
-            with sub_tabs[2]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'A' in x)], "strat_a")
-            with sub_tabs[3]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'B' in x)], "strat_b")
-            with sub_tabs[4]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'C' in x)], "strat_c")
-            with sub_tabs[5]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'D' in x)], "strat_d")
-            with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
+        with sub_tabs[0]: render_list(all_df, "all")
+        with sub_tabs[1]: render_list(all_df[all_df['전략수'] >= 2], "golden")
+        with sub_tabs[2]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'A' in x)], "strat_a")
+        with sub_tabs[3]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'B' in x)], "strat_b")
+        with sub_tabs[4]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'C' in x)], "strat_c")
+        with sub_tabs[5]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'D' in x)], "strat_d")
+        with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
-# TAB 2: 감시 포트폴리오 (10초 주기 실시간 부분 갱신)
+# TAB 2: 감시 포트폴리오
 # -------------------------------------------------------------
 elif active_tab == "monitor":
-    st.markdown(f"#### 📡 [{current_user}] 감시 포트폴리오 & 5% 알림 센터")
+    st.markdown(f"#### 📡 [{current_user}] 감시 포트폴리오")
     
     search_kw = st.text_input("🔍 감시 종목 추가", placeholder="예: 삼성전자, 펩트론, 에코프로, 아난티")
     if search_kw:
@@ -613,22 +561,16 @@ elif active_tab == "monitor":
         with c_in1:
             buy_price_in = st.number_input("매수가 (원)", value=10000, step=500)
         with c_in2:
-            stop_pct_in = st.number_input("손절선 (%)", value=6.0, step=0.5)
+            st.caption("실시간 수급 및 변동 추적")
 
         if st.button(f"➕ [{search_kw}] 등록", use_container_width=True, type="primary"):
             curr_list = get_saved_watchlist(current_user)
-            calc_stop = int(buy_price_in * (1 - (stop_pct_in / 100)))
-            calc_tp = int(buy_price_in * (1 + ((stop_pct_in * 3) / 100)))
             curr_list.append({
                 "name": search_kw,
                 "code": "005930",
                 "buy_price": buy_price_in,
                 "current_price": buy_price_in,
                 "pnl_pct": 0.0,
-                "stop_price": calc_stop,
-                "stop_pct": -stop_pct_in,
-                "tp_price": calc_tp,
-                "tp_pct": stop_pct_in * 3,
                 "last_notified_tier": 0,
                 "theme": "직접등록",
                 "strategy": "CUSTOM",
@@ -642,7 +584,7 @@ elif active_tab == "monitor":
     def render_live_portfolio():
         current_list = get_saved_watchlist(current_user)
         if not current_list:
-            st.info(f"[{current_user}] 계정에 감시 중인 종목이 없습니다. 위에서 종목을 검색해 등록하세요.")
+            st.info(f"[{current_user}] 계정에 감시 중인 종목이 없습니다.")
             return
 
         all_codes = [item['code'] for item in current_list]
@@ -654,8 +596,6 @@ elif active_tab == "monitor":
             live_data = batch_prices.get(str(code).zfill(6), {})
             real_p = live_data.get("price", item.get('current_price', buy_p))
             pnl_pct = round(((real_p - buy_p) / buy_p) * 100, 2)
-            stop_p = item['stop_price']
-            tp_p = item.get('tp_price', int(buy_p * 1.18))
 
             st.markdown(f"""
             <div class='glass-card'>
@@ -668,9 +608,6 @@ elif active_tab == "monitor":
                 <div style='margin-top:6px; font-size:0.95rem; color:#334155;'>
                     매수가 {buy_p:,}원 ➡️ <b>현재가 {real_p:,}원</b>
                 </div>
-                <div style='margin-top:6px; padding: 7px 12px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; font-size:0.82rem; color:#475569;'>
-                    🛑 손절: <b style='color:#dc2626;'>{stop_p:,}원</b> &nbsp;|&nbsp; 🎯 3R익절: <b style='color:#16a34a;'>{tp_p:,}원</b>
-                </div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -682,52 +619,59 @@ elif active_tab == "monitor":
     render_live_portfolio()
 
 # -------------------------------------------------------------
-# TAB 4: 4대 타임라인 텔레그램 브리핑 & 자동 발송 테스트
+# TAB 4: 4대 타임라인 텔레그램 브리핑 센터
 # -------------------------------------------------------------
 elif active_tab == "briefing":
-    st.markdown(f"#### 📢 [{current_user}] 시간대별 텔레그램 브리핑 센터")
-    st.caption("지정된 시간에 무인 자동 발송되며, 아래 시뮬레이터로 자동 발송 파이프라인을 즉시 테스트할 수 있습니다.")
+    st.markdown(f"#### 📢 [{current_user}] 시간대별 텔레그램 4대 브리핑 센터")
+    st.caption("정해진 시간(KST 기준)에 자동으로 발송되며, 아래 버튼으로 언제든 즉시 수동 발송할 수 있습니다.")
 
-    # 🤖 무인 자동 발송 파이프라인 즉시 테스트 섹션
+    saved_creds = load_user_credentials(current_user)
+    tg_t = saved_creds["tg_token"]
+    tg_c = saved_creds["tg_chat_id"]
+
+    # 1. 07:50 모닝 매크로 & 야간선물
     with st.container():
-        st.markdown("""
-        <div style='background:#eff6ff; border: 1.5px solid #3b82f6; border-radius: 14px; padding: 12px 14px; margin-bottom: 14px;'>
-            <div style='font-weight: 800; color: #1e40af; font-size: 0.95rem; margin-bottom: 4px;'>🤖 무인 자동 스케줄러 즉시 테스트</div>
-            <div style='font-size: 0.8rem; color: #1e3a8a; margin-bottom: 8px;'>버튼을 클릭하면 스케줄러가 현재 시점에 맞는 브리핑을 텔레그램으로 즉시 자동 전송합니다.</div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("🚀 무인 자동 발송 파이프라인 즉시 테스트 실행", use_container_width=True, type="primary"):
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🌐 07:50 모닝 글로벌 매크로 & 야간선물</b><br><small style='color:#64748b;'>미 증시, 환율, 금리 및 코스피200 야간선물 종합 분석</small></div>", unsafe_allow_html=True)
+        if st.button("📢 07:50 브리핑 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
-                notifier = TelegramNotifier(tg_t, tg_c)
-                test_msg = f"🔔 *[{current_user} 무인 자동 발송 파이프라인 검증 성공]*\n\n"
-                test_msg += NaverStockScreener.generate_intraday_leader_briefing("실시간 자동검증")
-                if notifier.send_message(test_msg):
-                    st.success("✅ 텔레그램으로 무인 자동 브리핑이 성공적으로 전송되었습니다! 스마트폰 텔레그램을 확인하세요.")
-                else:
-                    st.error("❌ 전송 실패: 설정 탭에서 봇 토큰과 채팅 ID를 확인해 주세요.")
-            else:
-                st.warning("⚠️ 설정 탭에서 텔레그램 Bot Token과 Chat ID를 먼저 저장해 주세요.")
-
-    c_b1, c_b2 = st.columns(2)
-    with c_b1:
-        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🌐 08:00 글로벌 매크로</b><br><small style='color:#64748b;'>미 증시, 야간선물, 환율 분석</small></div>", unsafe_allow_html=True)
-        if st.button("📢 08:00 수동 발송", use_container_width=True):
-            if tg_t and tg_c:
-                msg = NaverStockScreener.generate_0800_global_briefing()
+                msg = NaverStockScreener.generate_0750_global_briefing()
                 TelegramNotifier(tg_t, tg_c).send_message(msg)
-                st.success("발송 완료!")
+                st.success("✅ 07:50 글로벌 매크로 브리핑 발송 완료!")
             else:
-                st.warning("설정 탭에서 텔레그램 설정을 저장하세요.")
+                st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
-    with c_b2:
-        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>⚡ 09:30 장초반 주도섹터</b><br><small style='color:#64748b;'>오전 거래대금 쏠림 TOP 3</small></div>", unsafe_allow_html=True)
-        if st.button("📢 09:30 수동 발송", use_container_width=True):
+    # 2. 09:30 실시간 주도 테마 & 수급 TOP 10
+    with st.container():
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>⚡ 09:30 실시간 주도 테마 & 수급 TOP 10</b><br><small style='color:#64748b;'>개장 초반 1등 테마 및 외인/기관/프로그램 순매수 주도주 10개 추출</small></div>", unsafe_allow_html=True)
+        if st.button("📢 09:30 브리핑 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
-                msg = NaverStockScreener.generate_intraday_leader_briefing("09:30")
+                msg = NaverStockScreener.generate_supply_leader_top10_briefing("09:30")
                 TelegramNotifier(tg_t, tg_c).send_message(msg)
-                st.success("발송 완료!")
+                st.success("✅ 09:30 주도 테마 & 수급 TOP 10 브리핑 발송 완료!")
             else:
-                st.warning("설정 탭에서 텔레그램 설정을 저장하세요.")
+                st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
+
+    # 3. 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)
+    with st.container():
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🔥 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)</b><br><small style='color:#64748b;'>오전 수급 연속성 체크 및 외인/기관/프로그램 주도주 10개 재추출</small></div>", unsafe_allow_html=True)
+        if st.button("📢 10:00 브리핑 즉시 발송", use_container_width=True):
+            if tg_t and tg_c:
+                msg = NaverStockScreener.generate_supply_leader_top10_briefing("10:00")
+                TelegramNotifier(tg_t, tg_c).send_message(msg)
+                st.success("✅ 10:00 주도 테마 & 수급 TOP 10 브리핑 발송 완료!")
+            else:
+                st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
+
+    # 4. 15:30 장 마감 종합 결산
+    with st.container():
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🏁 15:30 장 마감 종합 결산</b><br><small style='color:#64748b;'>당일 지수 결산, 최종 주도 테마 및 장마감 메이저 수급주 총결산</small></div>", unsafe_allow_html=True)
+        if st.button("📢 15:30 브리핑 즉시 발송", use_container_width=True):
+            if tg_t and tg_c:
+                msg = NaverStockScreener.generate_1530_closing_briefing()
+                TelegramNotifier(tg_t, tg_c).send_message(msg)
+                st.success("✅ 15:30 장 마감 결산 브리핑 발송 완료!")
+            else:
+                st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
 # -------------------------------------------------------------
 # TAB 6: 시스템 & 계정 전용 설정
@@ -751,8 +695,7 @@ elif active_tab == "settings":
                 st.toast(f"✅ '{new_u.strip()}' 계정으로 전환되었습니다!")
                 st.rerun()
 
-    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-    
+    saved_creds = load_user_credentials(current_user)
     with st.container():
         st.markdown(f"""
         <div class='glass-card'>
