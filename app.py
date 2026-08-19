@@ -10,6 +10,7 @@ from alpha_investor.scoring import alpha_score, build_trade_plan
 from alpha_investor.config import settings
 from alpha_investor.kis_provider import KisConfigurationError, KisMarketProvider
 from alpha_investor.market_intelligence import leader_groups, new_high_candidates, sample_market_rows
+from alpha_investor.strategy_engine import CORE_SECTOR_KEYWORDS, exit_plan
 
 st.set_page_config(page_title="Alpha Desk", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -27,7 +28,7 @@ def current_indices():
 
 with st.sidebar:
     st.title("◈ ALPHA DESK"); st.caption("결정 지원 · 리스크 관리")
-    page=st.radio("주 메뉴",["오늘의 브리핑","후보 발굴","매매 계획","내 포트폴리오","검증·일지","아침 브리핑","연동·운영"],label_visibility="collapsed")
+    page=st.radio("주 메뉴",["오늘의 브리핑","후보 발굴","전략 룰","매매 계획","내 포트폴리오","검증·일지","아침 브리핑","연동·운영"],label_visibility="collapsed")
     st.divider(); st.caption("데이터 상태"); st.warning("현재: 데모 데이터",icon="⚠️"); st.caption("실서비스 전 공식 시세·공시·수급 공급자 연결이 필요합니다.")
     st.divider(); st.caption("투자 조언이 아닌 정보·리스크 관리 도구입니다.")
 
@@ -85,6 +86,24 @@ elif page=="후보 발굴":
     if records: st.dataframe(pd.DataFrame(records).sort_values("Alpha",ascending=False),hide_index=True,width="stretch")
     else: st.info("현재 필터에 해당하는 후보가 없습니다. 억지로 후보를 만들지 않는 것도 중요한 결과입니다.")
     st.divider(); header("반대 신호","후보를 제외하거나 보류해야 하는 사유를 함께 기록합니다."); st.write("• 과도한 이격 · • 거래량 없는 상승 · • 손절 폭 과대 · • 장중 변동성 과대 · • 공시/실적 이벤트 임박")
+
+elif page=="전략 룰":
+    header("5대 정밀 진입 전략","모든 조건은 장중 추정값과 종가 확정값을 구분해 기록합니다. 아래 기준은 자동 주문이 아닌 후보 선별·복기 규칙입니다.")
+    st.info("공통 필터: 시가총액 1,000억 원 이상 · 거래대금 300억 원 이상. 서비스 운영 시 거래대금 상단/유동성 조건은 전략별로 설정 가능하게 관리합니다.")
+    rules=pd.DataFrame([
+        ['A','메이저 수급 주도주','거래량 1.5배 이상 + 당일 +14.5% 이상 양봉 장대 돌파'],
+        ['B','10일선 급등 눌림목','120일 정배열 + 윗꼬리 ≤ 4.5% + 10일선 터치 후 -1.5~+1.0% 지지 반등'],
+        ['C','20일선 정석 눌림목','120일 정배열 + 윗꼬리 ≤ 4.5% + 20일선 터치 후 -2.0~+1.5% 지지 반등'],
+        ['D','52주·역사적 신고가 돌파','최근 240거래일 최고 종가 돌파 + 당일 +1.5% 이상 양봉'],
+        ['E','바닥 턴어라운드','장기 하락권에서 거래량 동반 + 20일선 첫 상향 돌파 +2.5% 이상 반등'],
+    ],columns=['전략','이름','명시적 통과 조건'])
+    st.dataframe(rules,hide_index=True,width='stretch')
+    st.markdown("#### 주도 섹터 정량 검증")
+    st.write("각 섹터에서 **시총 1,000억 이상 + 5>10>20>60>120일 정배열** 종목 비중을 계산하고, 거래대금·가중 수익률·외국인/기관/프로그램 순매수를 함께 점수화합니다. 테마 라벨은 키워드 하나만으로 확정하지 않고 종목별 매핑표와 검토 이력을 유지합니다.")
+    st.caption('핵심 15개 자동 라벨: ' + ' · '.join(CORE_SECTOR_KEYWORDS.keys()))
+    ep=exit_plan(100_000)
+    st.markdown("#### 기본 청산 플레이북")
+    st.dataframe(pd.DataFrame([['손절 / 1R',f'{ep.stop:,.0f}원','매수가 대비 -6.0% 도달 시 전량 손절'],['3R 1차 익절',f'{ep.take_profit_3r:,.0f}원','+18.0%에서 50% 분할 익절, 즉시 손절가를 매수가로 상향'],['잔여 추세 추종','최고가 대비 -5.0%','트레일링 스탑 청산'],['타임스탑','40거래일','목표가 미도달 횡보 시 종가 청산'],['선택 보조','SR_RETEST / 이평선','20일 고점 50% 익절, 20일선 이탈 시 청산']],columns=['규칙','예시 매수가 100,000원','행동']),hide_index=True,width='stretch')
 
 elif page=="매매 계획":
     header("한 종목, 한 계획","진입 전에는 ‘왜 살까’보다 ‘언제 틀렸다고 인정할까’를 먼저 기록합니다.")
