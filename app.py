@@ -299,8 +299,9 @@ def show_chart_modal(code: str, name: str):
 def render_stock_card(row, tab_prefix: str = "all"):
     curr_p = int(row['현재가'])
     chg_r = float(row['등락률(%)'])
+    t_val_억 = float(row['거래대금(억원)'])
     
-    formatted_money = format_korean_money(row['거래대금(억원)'])
+    formatted_money = format_korean_money(t_val_억)
     is_golden = row.get('전략수', 0) >= 2
     card_class = "golden-glow-card" if is_golden else "glass-card"
     golden_badge = "<span class='badge-chip' style='background:#f59e0b; color:#ffffff;'>🔥 다중일치</span> " if is_golden else ""
@@ -456,12 +457,12 @@ def render_live_market_dashboard():
 render_live_market_dashboard()
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (상승률 높은 순 나열)
+# TAB 1: 퀀트 스크리너 (거래대금 500억↑ & +5%↑)
 # -------------------------------------------------------------
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
     with c_tit:
-        st.markdown("<h4 style='color:#0f172a; font-weight:800; margin:0;'>🔥 주도 테마 & 메이저 주도주 (+5%↑)</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color:#0f172a; font-weight:800; margin:0;'>🔥 주도 테마 & 메이저 주도주 (대금 500억↑ & +5%↑)</h4>", unsafe_allow_html=True)
     with c_btn:
         run_scan = st.button("🔄 실시간 스캔", use_container_width=True)
 
@@ -484,9 +485,9 @@ if active_tab == "screener":
             with grid_cols[i]:
                 st.button(btn_label, key=f"theme_btn_{i}", use_container_width=True, help=f"대장주: {theme['leader']}")
 
-    st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 트레이딩 전략별 주도주 (상승률 상위순)</h5>", unsafe_allow_html=True)
+    st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 전략 주도주 (거래대금 상위순)</h5>", unsafe_allow_html=True)
     if all_df.empty:
-        st.info("💡 현재 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 주도주를 탐색 중입니다.")
+        st.info("💡 현재 거래대금 500억 원 이상 & 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 메이저 주도주를 탐색 중입니다.")
     else:
         sub_tabs = st.tabs([
             f"전체({len(all_df)})",
@@ -497,8 +498,7 @@ if active_tab == "screener":
             if df_subset.empty:
                 st.info("해당 조건의 종목이 없습니다.")
                 return
-            sorted_subset = df_subset.sort_values(by="등락률(%)", ascending=False)
-            for _, r in sorted_subset.iterrows():
+            for _, r in df_subset.iterrows():
                 render_stock_card(r, tab_prefix=tab_prefix)
 
         with sub_tabs[0]: render_list(all_df, "all")
@@ -596,7 +596,7 @@ elif active_tab == "briefing":
                 st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
     with st.container():
-        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>⚡ 09:30 실시간 주도 테마 & 수급 TOP 10</b><br><small style='color:#64748b;'>개장 초반 1등 테마 및 (+5%↑ & 20일선 위) 외인/기관/프로그램 순매수 주도주 10개 추출</small></div>", unsafe_allow_html=True)
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>⚡ 09:30 실시간 주도 테마 & 수급 TOP 10</b><br><small style='color:#64748b;'>개장 초반 1등 테마 및 (대금 500억↑ & +5%↑) 외인/기관/프로그램 순매수 주도주 10개 추출</small></div>", unsafe_allow_html=True)
         if st.button("📢 09:30 브리핑 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
                 msg = NaverStockScreener.generate_supply_leader_top10_briefing("09:30")
@@ -606,7 +606,7 @@ elif active_tab == "briefing":
                 st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
     with st.container():
-        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🔥 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)</b><br><small style='color:#64748b;'>오전 수급 연속성 체크 및 (+5%↑ & 20일선 위) 주도주 10개 재추출</small></div>", unsafe_allow_html=True)
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🔥 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)</b><br><small style='color:#64748b;'>오전 수급 연속성 체크 및 (대금 500억↑ & +5%↑) 주도주 10개 재추출</small></div>", unsafe_allow_html=True)
         if st.button("📢 10:00 브리핑 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
                 msg = NaverStockScreener.generate_supply_leader_top10_briefing("10:00")
@@ -616,7 +616,7 @@ elif active_tab == "briefing":
                 st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
     with st.container():
-        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🏁 15:30 장 마감 종합 결산</b><br><small style='color:#64748b;'>당일 지수 결산, 최종 주도 테마 및 (+5%↑ & 20일선 위) 메이저 수급주 총결산</small></div>", unsafe_allow_html=True)
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🏁 15:30 장 마감 종합 결산</b><br><small style='color:#64748b;'>당일 지수 결산, 최종 주도 테마 및 (대금 500억↑ & +5%↑) 메이저 수급주 총결산</small></div>", unsafe_allow_html=True)
         if st.button("📢 15:30 브리핑 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
                 msg = NaverStockScreener.generate_1530_closing_briefing()
