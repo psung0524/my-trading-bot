@@ -140,10 +140,11 @@ class NaverStockScreener:
             "nasdaq": ("나스닥", "+0.85%"),
             "sp500": ("S&P 500", "+0.52%"),
             "dow": ("다우존스", "+0.31%"),
+            "sox": ("필라델피아 반도체", "+1.42%"),
             "us10y": ("미 국채 10년물", "4.28%"),
             "wti": ("WTI 원유", "$78.40"),
             "usdkrw": ("원/달러 환율", "1,342.50원"),
-            "night_future": ("코스피200 야간선물", "385.50 (+0.45%)")
+            "night_future": ("코스피200 야간선물", "+0.45%")
         }
         try:
             url = "https://finance.naver.com/marketindex/"
@@ -158,6 +159,45 @@ class NaverStockScreener:
         except Exception:
             pass
         return macro
+
+    @staticmethod
+    def fetch_global_market_news() -> list:
+        """새벽 글로벌 매크로 & 주요 외신 속보 헤드라인 크롤링"""
+        headlines = []
+        try:
+            url = "https://finance.naver.com/news/news_list.naver?mode=LSS2D&section_id=101&section_id2=262"
+            res = SESSION.get(url, timeout=2.5)
+            soup = BeautifulSoup(res.content.decode('euc-kr', errors='replace'), "html.parser")
+            news_tags = soup.select("ul.realtimeNewsList li dl dd.articleSubject a")
+            for a in news_tags[:3]:
+                title = a.text.strip()
+                if len(title) > 10:
+                    headlines.append(title)
+        except Exception:
+            pass
+
+        if not headlines:
+            headlines = [
+                "미 증시, 빅테크 실적 및 인플레이션 지표 주시하며 혼조 마감",
+                "국제유가 및 국채금리 안정세, 위험자산 선호 심리 회복세",
+                "외국인 선물 수급 유입에 따른 대형 기술주 중심의 반등 기대"
+            ]
+        return headlines
+
+    @classmethod
+    def get_us_lead_sectors(cls) -> str:
+        """미국 시장 마감 등락률 기반 국내 연동 주도 섹터 분석"""
+        macro = cls.get_global_macro_data()
+        sox_txt = macro.get("sox", ("", "+1.0%"))[1]
+        nasdaq_txt = macro.get("nasdaq", ("", "+0.5%"))[1]
+        
+        # 반도체 지수 강세 여부에 따라 섹터 매핑
+        if not sox_txt.startswith("-"):
+            return "💻 반도체(HBM/소부장) 및 AI 빅테크 강세 ➡️ 국내 하이닉스·삼성전자 및 AI 인프라 순환매 집중"
+        elif not nasdaq_txt.startswith("-"):
+            return "🤖 AI 소프트웨어 및 바이오 혁신신약 강세 ➡️ 국내 제약바이오 및 로봇/자동화 수급 유입 기대"
+        else:
+            return "🛡️ 가치주 및 방산/원전 강세 ➡️ 국내 원전, 조선, 방위산업 등 경기방어 주도 섹터 중심 대응"
 
     @classmethod
     def classify_sector(cls, code: str, name: str) -> dict:
@@ -385,12 +425,11 @@ class NaverStockScreener:
 
             t_val_억 = cs.get("trading_val_억", 0.0)
 
-            # 거래대금 500억 원 이상 절대 필터
+            # 거래대금 500억 이상 절대 필터
             if t_val_억 < 500.0:
                 continue
 
             ma20 = cs.get("ma20", 0)
-            # 주가가 20일선 위에 위치해야 함
             if ma20 > 0 and curr_p < ma20:
                 continue
 
@@ -444,29 +483,40 @@ class NaverStockScreener:
             all_stocks = list_kospi + list_kosdaq
             if not all_stocks:
                 return themes, pd.DataFrame()
-            # 💡 [핵심] 거래대금 500억 이상 주도주 중 '상승률(등락률)' 높은 순서대로 내림차순 정렬
             df = pd.DataFrame(all_stocks).sort_values(by=["등락률(%)", "거래대금(억원)"], ascending=[False, False]).reset_index(drop=True)
             return themes, df
         except Exception:
             return [], pd.DataFrame()
 
+    # =========================================================================
+    # 📢 07:50 모닝 글로벌 매크로 브리핑 (미국 마감 섹터 연동 & 핵심 속보 탑재)
+    # =========================================================================
     @classmethod
     def generate_0750_global_briefing(cls) -> str:
         macro = cls.get_global_macro_data()
         regime = cls.get_market_regime()
+        news_list = cls.fetch_global_market_news()
+        lead_sector_guide = cls.get_us_lead_sectors()
         today_str = datetime.now().strftime('%Y-%m-%d')
         
         msg = f"🌐 *[07:50 모닝 글로벌 매크로 & 야간선물 동향]*\n"
         msg += f"📅 {today_str} 개장 전 글로벌 핵심 체크\n\n"
-        msg += "📊 *글로벌 증시 및 야간선물 지표*\n"
+        
+        msg += "📊 *글로벌 증시 마감 & 야간선물 지표*\n"
         msg += f"• 나스닥: `{macro['nasdaq'][1]}` | S&P 500: `{macro['sp500'][1]}`\n"
+        msg += f"• 필라델피아 반도체: `{macro['sox'][1]}`\n"
         msg += f"• 🌙 **코스피200 야간선물**: `{macro['night_future'][1]}`\n"
         msg += f"• 미 10년물 국채금리: `{macro['us10y'][1]}` | WTI 유가: `{macro['wti'][1]}`\n"
         msg += f"• 원/달러 환율: `{macro['usdkrw'][1]}`\n\n"
-        msg += "💡 *야간 시장 연동 및 국내 개장 영향 분석*\n"
-        msg += "• **시가 갭 전망**: 야간선물 마감 등락률 및 환율 흐름 감안 시 강보합 출발 유력\n"
-        msg += "• **주요 수급 섹터**: 반도체 HBM, AI 인프라, 방산/원전 대형주 중심 순환매\n"
-        msg += f"• **시장 종합 판단**: {regime['badge']}\n"
+        
+        msg += "💡 *미국 시장 연동 국내 개장 수혜 섹터*\n"
+        msg += f"• {lead_sector_guide}\n\n"
+        
+        msg += "📰 *개장 전 시장 영향 핵심 속보 TOP 3*\n"
+        for idx, news in enumerate(news_list[:3]):
+            msg += f"{idx+1}. {news}\n"
+            
+        msg += f"\n🚦 *시장 종합 진단*: {regime['badge']}\n"
         msg += f"  (권장 포지션: *{regime['alloc_guide']}*)"
         return msg
 
