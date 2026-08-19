@@ -259,7 +259,8 @@ class NaverStockScreener:
                         "close": float(parts[4]),
                         "high": float(parts[2]),
                         "low": float(parts[3]),
-                        "open": float(parts[1])
+                        "open": float(parts[1]),
+                        "volume": float(parts[5])
                     })
             if len(records) >= 30:
                 df = pd.DataFrame(records)
@@ -269,6 +270,9 @@ class NaverStockScreener:
                 ma20 = df['close'].tail(20).mean()
                 prev_high_close = df['close'].iloc[:-1].max()
                 
+                # 캔들 기반 정확한 당일 거래대금(억 원) 계산
+                today_trading_val_억 = round((curr['close'] * curr['volume']) / 100000000.0, 1)
+                
                 return {
                     "curr_close": curr['close'],
                     "curr_low": curr['low'],
@@ -277,6 +281,7 @@ class NaverStockScreener:
                     "ma10": ma10,
                     "ma20": ma20,
                     "prev_high_close": prev_high_close,
+                    "trading_val_억": today_trading_val_억,
                     "valid": True
                 }
         except Exception:
@@ -328,7 +333,7 @@ class NaverStockScreener:
         candidates = []
         seen_codes = set()
 
-        for page in range(1, 11):
+        for page in range(1, 10):
             url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
             try:
                 res = SESSION.get(url, timeout=3.0)
@@ -353,11 +358,9 @@ class NaverStockScreener:
 
                     curr_p = int(clean_num(tds[2].text))
                     change_rate = parse_naver_change_rate(tds[4])
-                    vol = clean_num(tds[9].text)
-                    trading_val_억 = round((curr_p * vol) / 100000000.0, 1)
 
-                    # 거래대금 500억 이상 & 당일 +5% 이상 필수 필터
-                    if trading_val_억 < 500.0 or change_rate < 5.0:
+                    # 💡 1차 필터: 당일 상승률 +5.0% 이상 종목만 후보군에 편입
+                    if change_rate < 5.0:
                         continue
 
                     seen_codes.add(code)
@@ -366,8 +369,7 @@ class NaverStockScreener:
                         "code": code,
                         "name": name,
                         "curr_p": curr_p,
-                        "change_rate": change_rate,
-                        "trading_val_억": trading_val_억
+                        "change_rate": change_rate
                     })
             except Exception:
                 break
@@ -378,11 +380,21 @@ class NaverStockScreener:
             name = item["name"]
             curr_p = item["curr_p"]
             change_rate = item["change_rate"]
-            t_val_억 = item["trading_val_억"]
 
             cs = cls.fetch_recent_candles_summary(code)
+            if not cs.get("valid"):
+                continue
+
+            # 💡 정확한 당일 거래대금(억 원)
+            t_val_억 = cs.get("trading_val_억", 0.0)
+
+            # 💡 [필수 원칙 1] 거래대금 500억 원 이상 절대 필터
+            if t_val_억 < 500.0:
+                continue
+
             ma20 = cs.get("ma20", 0)
-            if cs.get("valid") and ma20 > 0 and curr_p < ma20:
+            # 💡 [필수 원칙 2] 주가가 20일선 위에 위치해야 함
+            if ma20 > 0 and curr_p < ma20:
                 continue
 
             ma10 = cs.get("ma10", curr_p)
