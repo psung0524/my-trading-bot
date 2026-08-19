@@ -23,9 +23,6 @@ OLD_WATCHLIST_FILE = Path(__file__).parent / "watchlist.json"
 
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
-# -------------------------------------------------------------
-# 1. UI 설정 & 라이트 테마
-# -------------------------------------------------------------
 st.set_page_config(
     page_title="Alpha Desk Trading Engine",
     page_icon="⚡",
@@ -36,14 +33,12 @@ st.set_page_config(
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
 
-# 계정 유실 방지: spark 계정 기본 유지
 url_user = query_params.get("user", "").strip()
 if "current_user" not in st.session_state:
     st.session_state["current_user"] = url_user if (url_user and url_user != "default") else "spark"
 
 current_user = st.session_state["current_user"]
 
-# 브라우저 영구 계정 기억 스크립트
 components.html(f"""
 <script>
     const currentParam = new URLSearchParams(window.parent.location.search).get("user");
@@ -177,9 +172,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------------------
-# 2. 상단 고정 네비게이션 바
-# -------------------------------------------------------------
 st.markdown(f"""
 <div class="glass-top-bar">
     <a href="?user={current_user}&tab=screener" target="_self" class="glass-tab-item {'active' if active_tab=='screener' else ''}">
@@ -209,9 +201,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------------------
-# 3. 사용자별 설정 & 파일 관리 함수
-# -------------------------------------------------------------
 def get_user_config_file(user_id: str) -> Path:
     safe_name = "".join([c for c in user_id if c.isalnum() or c in ('-', '_')]).strip() or "spark"
     return CONFIG_DIR / f"config_{safe_name}.json"
@@ -285,41 +274,13 @@ def save_watchlist(user_id: str, watchlist):
     with open(w_file, "w", encoding="utf-8") as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
-# -------------------------------------------------------------
-# 4. 캐싱 & 고속 실시간 시세 폴링 엔진
-# -------------------------------------------------------------
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_cached_screener_data():
     return NaverStockScreener.run_multi_strategy_screen()
 
 @st.cache_data(ttl=10, show_spinner=False)
 def get_cached_market_regime():
     return NaverStockScreener.get_market_regime()
-
-def fetch_batch_realtime_prices(codes: list) -> dict:
-    if not codes:
-        return {}
-    price_map = {}
-    try:
-        code_str = ",".join([str(c).zfill(6) for c in codes])
-        url = f"https://polling.finance.naver.com/api/realtime/domestic/stock/{code_str}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=1.8)
-        if res.status_code == 200:
-            data = res.json()
-            if 'result' in data and 'areas' in data['result']:
-                for area in data['result']['areas']:
-                    for it in area.get('datas', []):
-                        c_code = str(it.get('cd', '')).zfill(6)
-                        nv = int(it.get('nv', 0))
-                        cr = float(it.get('cr', 0.0))
-                        if it.get('rf') in ['4', '5']:
-                            cr = -abs(cr)
-                        if nv > 0:
-                            price_map[c_code] = {"price": nv, "change_rate": cr}
-    except Exception:
-        pass
-    return price_map
 
 def format_korean_money(amount_eok: float) -> str:
     if amount_eok >= 10000:
@@ -335,9 +296,9 @@ def show_chart_modal(code: str, name: str):
     chart_url = f"https://ssl.pstatic.net/imgfinance/chart/item/area/day/{code}.png"
     st.image(chart_url, caption="일봉 차트", use_container_width=True)
 
-def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_prefix: str = "all"):
-    curr_p = int(current_price_live if current_price_live is not None else row['현재가'])
-    chg_r = float(change_rate_live if change_rate_live is not None else row['등락률(%)'])
+def render_stock_card(row, tab_prefix: str = "all"):
+    curr_p = int(row['현재가'])
+    chg_r = float(row['등락률(%)'])
     
     formatted_money = format_korean_money(row['거래대금(억원)'])
     is_golden = row.get('전략수', 0) >= 2
@@ -454,7 +415,7 @@ if (now_kst.hour == 15 and now_kst.minute >= 30) or (now_kst.hour == 16 and now_
     broadcast_briefing("1530", NaverStockScreener.generate_1530_closing_briefing)
 
 # -------------------------------------------------------------
-# 6. 실시간 지수 렌더러 (10초 주기 자동 부분 갱신)
+# 6. 실시간 지수 렌더러
 # -------------------------------------------------------------
 @st.fragment(run_every="10s")
 def render_live_market_dashboard():
@@ -495,7 +456,7 @@ def render_live_market_dashboard():
 render_live_market_dashboard()
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (야간/장마감 데이터 보호 로직 적용)
+# TAB 1: 퀀트 스크리너 (상승률 높은 순 나열)
 # -------------------------------------------------------------
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
@@ -510,39 +471,6 @@ if active_tab == "screener":
 
     themes_data, all_df = get_cached_screener_data()
     top_themes = themes_data
-
-    live_price_dict = {}
-    if not all_df.empty:
-        displayed_codes = all_df['종목코드'].tolist()
-        live_price_dict = fetch_batch_realtime_prices(displayed_codes)
-        
-        filtered_rows = []
-        for _, r in all_df.iterrows():
-            code_key = str(r['종목코드']).zfill(6)
-            live_info = live_price_dict.get(code_key, {})
-            
-            # 💡 [핵심 버그 수정] 야간에 live_p나 live_cr이 0으로 오면 크롤링된 원래 값을 우선 사용
-            live_p = live_info.get("price", 0)
-            if live_p == 0:
-                live_p = r['현재가']
-                
-            live_cr = live_info.get("change_rate", 0.0)
-            if live_cr == 0.0:
-                live_cr = r['등락률(%)']
-                
-            ma20 = r.get("ma20", 0)
-            
-            # 음수가 아니고 등락률 +5.0% 이상인 종목 보존
-            if live_cr >= 5.0 and (ma20 == 0 or live_p >= ma20):
-                r_copy = r.copy()
-                r_copy['현재가'] = live_p
-                r_copy['등락률(%)'] = live_cr
-                filtered_rows.append(r_copy)
-                
-        if filtered_rows:
-            all_df = pd.DataFrame(filtered_rows).sort_values(by="등락률(%)", ascending=False).reset_index(drop=True)
-        else:
-            all_df = all_df.sort_values(by="등락률(%)", ascending=False).reset_index(drop=True)
 
     if top_themes:
         st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP</div>", unsafe_allow_html=True)
@@ -619,14 +547,10 @@ elif active_tab == "monitor":
             st.info(f"[{current_user}] 계정에 감시 중인 종목이 없습니다.")
             return
 
-        all_codes = [item['code'] for item in current_list]
-        batch_prices = fetch_batch_realtime_prices(all_codes)
-
         for item in current_list:
             code = item['code']
             buy_p = item['buy_price']
-            live_data = batch_prices.get(str(code).zfill(6), {})
-            real_p = live_data.get("price", item.get('current_price', buy_p))
+            real_p = item.get('current_price', buy_p)
             pnl_pct = round(((real_p - buy_p) / buy_p) * 100, 2)
 
             st.markdown(f"""
@@ -661,7 +585,6 @@ elif active_tab == "briefing":
     tg_t = saved_creds["tg_token"]
     tg_c = saved_creds["tg_chat_id"]
 
-    # 1. 07:50 모닝 매크로 & 야간선물
     with st.container():
         st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🌐 07:50 모닝 글로벌 매크로 & 야간선물</b><br><small style='color:#64748b;'>미 증시, 환율, 금리 및 코스피200 야간선물 종합 분석</small></div>", unsafe_allow_html=True)
         if st.button("📢 07:50 브리핑 즉시 발송", use_container_width=True):
@@ -672,7 +595,6 @@ elif active_tab == "briefing":
             else:
                 st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
-    # 2. 09:30 실시간 주도 테마 & 수급 TOP 10
     with st.container():
         st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>⚡ 09:30 실시간 주도 테마 & 수급 TOP 10</b><br><small style='color:#64748b;'>개장 초반 1등 테마 및 (+5%↑ & 20일선 위) 외인/기관/프로그램 순매수 주도주 10개 추출</small></div>", unsafe_allow_html=True)
         if st.button("📢 09:30 브리핑 즉시 발송", use_container_width=True):
@@ -683,7 +605,6 @@ elif active_tab == "briefing":
             else:
                 st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
-    # 3. 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)
     with st.container():
         st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🔥 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)</b><br><small style='color:#64748b;'>오전 수급 연속성 체크 및 (+5%↑ & 20일선 위) 주도주 10개 재추출</small></div>", unsafe_allow_html=True)
         if st.button("📢 10:00 브리핑 즉시 발송", use_container_width=True):
@@ -694,7 +615,6 @@ elif active_tab == "briefing":
             else:
                 st.warning("설정 탭에서 텔레그램 설정을 먼저 저장하세요.")
 
-    # 4. 15:30 장 마감 종합 결산
     with st.container():
         st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🏁 15:30 장 마감 종합 결산</b><br><small style='color:#64748b;'>당일 지수 결산, 최종 주도 테마 및 (+5%↑ & 20일선 위) 메이저 수급주 총결산</small></div>", unsafe_allow_html=True)
         if st.button("📢 15:30 브리핑 즉시 발송", use_container_width=True):
