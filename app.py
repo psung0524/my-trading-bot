@@ -282,7 +282,6 @@ def get_cached_screener_data():
 def get_cached_market_regime():
     return NaverStockScreener.get_market_regime()
 
-# 💡 [필터링 없는 테마 전체 종목 수집 함수]
 def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
     if not theme_no:
         return []
@@ -522,7 +521,7 @@ def render_live_market_dashboard():
 render_live_market_dashboard()
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너
+# TAB 1: 퀀트 스크리너 (상승률 높은 순 나열)
 # -------------------------------------------------------------
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
@@ -575,36 +574,41 @@ if active_tab == "screener":
             st.rerun()
 
         if theme_stocks:
-            df_theme = pd.DataFrame(theme_stocks).sort_values(by="거래대금(억원)", ascending=False)
+            # 💡 테마 관련주도 상승률 높은 순으로 정렬
+            df_theme = pd.DataFrame(theme_stocks).sort_values(by="등락률(%)", ascending=False)
             for _, r in df_theme.iterrows():
                 render_stock_card(r, tab_prefix="theme_all")
         else:
             st.info(f"[{active_theme}] 테마에 등록된 관련 종목을 불러오는 중입니다.")
     else:
-        # 기본 5대 전략 주도주 리스트 (대금 500억 이상 & +5% 이상 & 20일선 위)
-        st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 전략 주도주 (대금 500억↑ & +5%↑)</h5>", unsafe_allow_html=True)
+        # 💡 [핵심] 기본 5대 전략 주도주 리스트 (상승률 높은 순 나열)
+        st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 전략 주도주 (상승률 상위순)</h5>", unsafe_allow_html=True)
         if all_df.empty:
-            st.info("💡 현재 거래대금 500억 원 이상 & 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 메이저 주도주를 탐색 중입니다. (장 마감 시간대이거나 하락장일 경우 엄격히 필터링됩니다.)")
+            st.info("💡 현재 거래대금 500억 원 이상 & 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 메이저 주도주를 탐색 중입니다.")
         else:
+            # 💡 상승률 높은 순으로 재정렬
+            all_df_sorted = all_df.sort_values(by="등락률(%)", ascending=False).reset_index(drop=True)
+            
             sub_tabs = st.tabs([
-                f"전체({len(all_df)})",
-                f"다중일치({len(all_df[all_df['전략수'] >= 2])})",
+                f"전체({len(all_df_sorted)})",
+                f"다중일치({len(all_df_sorted[all_df_sorted['전략수'] >= 2])})",
                 "A.수급", "B.10일선", "C.20일선", "D.신고가", "E.바닥턴"
             ])
             def render_list(df_subset, tab_prefix: str):
                 if df_subset.empty:
                     st.info("해당 조건의 종목이 없습니다.")
                     return
-                for _, r in df_subset.iterrows():
+                sorted_subset = df_subset.sort_values(by="등락률(%)", ascending=False)
+                for _, r in sorted_subset.iterrows():
                     render_stock_card(r, tab_prefix=tab_prefix)
 
-            with sub_tabs[0]: render_list(all_df, "all")
-            with sub_tabs[1]: render_list(all_df[all_df['전략수'] >= 2], "golden")
-            with sub_tabs[2]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'A' in x)], "strat_a")
-            with sub_tabs[3]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'B' in x)], "strat_b")
-            with sub_tabs[4]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'C' in x)], "strat_c")
-            with sub_tabs[5]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'D' in x)], "strat_d")
-            with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
+            with sub_tabs[0]: render_list(all_df_sorted, "all")
+            with sub_tabs[1]: render_list(all_df_sorted[all_df_sorted['전략수'] >= 2], "golden")
+            with sub_tabs[2]: render_list(all_df_sorted[all_df_sorted['매칭전략'].apply(lambda x: 'A' in x)], "strat_a")
+            with sub_tabs[3]: render_list(all_df_sorted[all_df_sorted['매칭전략'].apply(lambda x: 'B' in x)], "strat_b")
+            with sub_tabs[4]: render_list(all_df_sorted[all_df_sorted['매칭전략'].apply(lambda x: 'C' in x)], "strat_c")
+            with sub_tabs[5]: render_list(all_df_sorted[all_df_sorted['매칭전략'].apply(lambda x: 'D' in x)], "strat_d")
+            with sub_tabs[6]: render_list(all_df_sorted[all_df_sorted['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
 # TAB 2: 감시 포트폴리오
