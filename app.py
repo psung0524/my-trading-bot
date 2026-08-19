@@ -274,7 +274,7 @@ def save_watchlist(user_id: str, watchlist):
     with open(w_file, "w", encoding="utf-8") as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def get_cached_screener_data():
     return NaverStockScreener.run_multi_strategy_screen()
 
@@ -282,7 +282,7 @@ def get_cached_screener_data():
 def get_cached_market_regime():
     return NaverStockScreener.get_market_regime()
 
-@st.cache_data(ttl=60, show_spinner=False)
+# 💡 [필터링 없는 테마 전체 종목 수집 함수]
 def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
     if not theme_no:
         return []
@@ -316,6 +316,10 @@ def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
                     amount_eok = round(float(clean_num(num_tds[6].text)) / 100.0, 1)
                 except Exception:
                     pass
+
+            cs = NaverStockScreener.fetch_recent_candles_summary(code)
+            if cs.get("valid") and cs.get("trading_val_억", 0) > 0:
+                amount_eok = cs.get("trading_val_억")
 
             flow_info = NaverStockScreener.fetch_stock_investor_flow(code, curr_p, amount_eok)
 
@@ -537,7 +541,7 @@ if active_tab == "screener":
     themes_data, all_df = get_cached_screener_data()
     top_themes = themes_data
 
-    # ⚡ 테마 버튼 영역 (클릭 시 전 종목 펼치기 완벽 지원)
+    # ⚡ 급등 테마 TOP 버튼 영역
     if top_themes:
         st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP (클릭 시 관련 종목 리스트)</div>", unsafe_allow_html=True)
         t_row1_c1, t_row1_c2 = st.columns(2)
@@ -558,14 +562,14 @@ if active_tab == "screener":
     st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
     active_theme = st.session_state.get("selected_theme_filter")
 
-    # 🎯 특정 테마를 클릭했을 때 관련 종목 리스트 출력
+    # 🎯 특정 테마 클릭 시 관련 종목 '무조건' 전부 출력
     if active_theme:
         theme_no = st.session_state.get("selected_theme_no", "")
-        with st.spinner(f"[{active_theme}] 테마 관련 종목 조회 중..."):
+        with st.spinner(f"[{active_theme}] 관련 전 종목 불러오는 중..."):
             theme_stocks = fetch_theme_all_stocks(active_theme, theme_no)
 
         c_head, c_clear = st.columns([3, 1])
-        c_head.markdown(f"##### 🎯 [{active_theme}] 전체 관련 종목 ({len(theme_stocks)}개)")
+        c_head.markdown(f"##### 🎯 [{active_theme}] 관련 전 종목 ({len(theme_stocks)}개)")
         if c_clear.button("❌ 전체보기", use_container_width=True):
             st.session_state["selected_theme_filter"] = None
             st.rerun()
@@ -577,10 +581,10 @@ if active_tab == "screener":
         else:
             st.info(f"[{active_theme}] 테마에 등록된 관련 종목을 불러오는 중입니다.")
     else:
-        # 기본 5대 정밀 전략 주도주 출력
-        st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 전략 주도주 (거래대금 상위순)</h5>", unsafe_allow_html=True)
+        # 기본 5대 전략 주도주 리스트 (대금 500억 이상 & +5% 이상 & 20일선 위)
+        st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 전략 주도주 (대금 500억↑ & +5%↑)</h5>", unsafe_allow_html=True)
         if all_df.empty:
-            st.info("💡 현재 거래대금 500억 원 이상 & 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 메이저 주도주를 탐색 중입니다.")
+            st.info("💡 현재 거래대금 500억 원 이상 & 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 메이저 주도주를 탐색 중입니다. (장 마감 시간대이거나 하락장일 경우 엄격히 필터링됩니다.)")
         else:
             sub_tabs = st.tabs([
                 f"전체({len(all_df)})",
