@@ -22,11 +22,11 @@ def clean_num(val) -> float:
 
 class NaverStockScreener:
     STRATEGIES = {
-        "A": {"name": "전략 A. 메이저 수급 주도주", "badge": "💎 수급주도", "desc": "시총 1000억↑ & 거래대금 300억↑ & 주도 수급 포착"},
-        "B": {"name": "전략 B. 10일선 급등 눌림목", "badge": "🎯 10일선눌림", "desc": "120일 정배열 추세 중 단기 지지 반등"},
-        "C": {"name": "전략 C. 20일선 정석 눌림목", "badge": "🛡️ 20일선눌림", "desc": "20일 생명선 눌림목 반등 타점"},
-        "D": {"name": "전략 D. 52주/역사적 신고가 돌파", "badge": "🚀 신고가돌파", "desc": "매물대 상단 돌파 수급 집중"},
-        "E": {"name": "전략 E. 바닥 턴어라운드", "badge": "🌱 바닥턴", "desc": "바닥권 거래량 폭증 턴어라운드"}
+        "A": {"name": "전략 A. 메이저 수급 주도주", "badge": "💎 수급주도", "desc": "시총 1000억↑ & 거래대금 300억↑ & +14.5% 이상 대량수급"},
+        "B": {"name": "전략 B. 10일선 급등 눌림목", "badge": "🎯 10일선눌림", "desc": "20일선 위 & 10일선 지지 반등 (+5%↑)"},
+        "C": {"name": "전략 C. 20일선 정석 눌림목", "badge": "🛡️ 20일선눌림", "desc": "20일 생명선 지지 후 양봉 반등 (+5%↑)"},
+        "D": {"name": "전략 D. 52주/역사적 신고가 돌파", "badge": "🚀 신고가돌파", "desc": "52주 최고가 돌파 수급 집중 (+5%↑)"},
+        "E": {"name": "전략 E. 바닥 턴어라운드", "badge": "🌱 바닥턴", "desc": "20일선 상향 돌파 안착 (+5%↑)"}
     }
 
     SECTOR_PALETTE = {
@@ -194,7 +194,7 @@ class NaverStockScreener:
                 theme_href = name_tag.get("href", "")
                 change_rate = clean_num(tds[1].text)
 
-                if change_rate > 0.1 and theme_href:
+                if change_rate > 0.5 and theme_href:
                     detail_url = f"https://finance.naver.com{theme_href}"
                     leader_name = "확인중"
                     member_stocks = []
@@ -219,6 +219,46 @@ class NaverStockScreener:
             pass
         return themes
 
+    @staticmethod
+    @lru_cache(maxsize=1500)
+    def fetch_recent_candles_summary(code: str) -> dict:
+        url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count=140&requestType=0"
+        try:
+            res = SESSION.get(url, timeout=1.5)
+            soup = BeautifulSoup(res.text, "html.parser")
+            items = soup.select("item")
+            records = []
+            for item in items:
+                parts = item.get("data", "").split("|")
+                if len(parts) >= 6:
+                    records.append({
+                        "close": float(parts[4]),
+                        "high": float(parts[2]),
+                        "low": float(parts[3]),
+                        "open": float(parts[1])
+                    })
+            if len(records) >= 30:
+                df = pd.DataFrame(records)
+                curr = df.iloc[-1]
+                prev = df.iloc[-2]
+                ma10 = df['close'].tail(10).mean()
+                ma20 = df['close'].tail(20).mean()
+                prev_high_close = df['close'].iloc[:-1].max()
+                
+                return {
+                    "curr_close": curr['close'],
+                    "curr_low": curr['low'],
+                    "curr_open": curr['open'],
+                    "prev_close": prev['close'],
+                    "ma10": ma10,
+                    "ma20": ma20,
+                    "prev_high_close": prev_high_close,
+                    "valid": True
+                }
+        except Exception:
+            pass
+        return {"valid": False}
+
     @classmethod
     def fetch_stock_investor_flow(cls, code: str) -> dict:
         """외국인, 기관, 프로그램 순매수 추정치 크롤링"""
@@ -233,7 +273,6 @@ class NaverStockScreener:
                 if len(tds) >= 9 and tds[0].text.strip().replace(".", "").isdigit():
                     flow["institution"] = int(clean_num(tds[5].text))
                     flow["foreign"] = int(clean_num(tds[6].text))
-                    # 프로그램은 기관/외인 수급 강도 바탕으로 비례 산출
                     flow["program"] = int(flow["foreign"] * 0.7 + flow["institution"] * 0.4)
                     break
         except Exception:
@@ -245,7 +284,7 @@ class NaverStockScreener:
         market_name = "코스피" if sosok == 0 else "코스닥"
         candidates = []
 
-        for page in range(1, 3):
+        for page in range(1, 5):
             url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
             try:
                 res = SESSION.get(url, timeout=3.0)
@@ -270,7 +309,8 @@ class NaverStockScreener:
                     cap_억 = clean_num(tds[12].text) if len(tds) > 12 else 1000.0
                     trading_val_억 = round((curr_p * vol) / 100000000.0, 1)
 
-                    if trading_val_억 < 100.0:
+                    # 💡 [핵심 필터 1] 당일 등락률 +5.0% 이상 & 거래대금 300억 이상 필수 통과
+                    if change_rate < 5.0 or trading_val_억 < 300.0 or cap_억 < 1000.0:
                         continue
 
                     candidates.append({
@@ -286,25 +326,67 @@ class NaverStockScreener:
                 break
 
         results = []
-        for i, item in enumerate(candidates):
+        for item in candidates:
             code = item["code"]
             name = item["name"]
-            market_cap_억 = item["market_cap_억"]
+            curr_p = item["curr_p"]
             change_rate = item["change_rate"]
+            market_cap_억 = item["market_cap_억"]
 
-            strat_pool = list(cls.STRATEGIES.keys())
-            assigned_strat = [strat_pool[i % len(strat_pool)]]
-            if item["trading_val_억"] >= 500.0 or change_rate > 3.0:
-                assigned_strat.append("A")
+            cs = cls.fetch_recent_candles_summary(code)
+            if not cs.get("valid"):
+                continue
+
+            # 💡 [핵심 필터 2] 주가가 반드시 20일 이동평균선 위에 위치해야 함
+            ma20 = cs["ma20"]
+            if curr_p < ma20:
+                continue
+
+            ma10 = cs["ma10"]
+            prev_close = cs["prev_close"]
+            prev_high = cs["prev_high_close"]
+
+            matched = []
+            
+            # 전략 A: 14.5% 이상 대량 수급
+            if change_rate >= 14.5:
+                matched.append("A")
+
+            # 전략 B: 20일선 위 & 10일선 지지 반등
+            if curr_p >= ma10 * 0.985:
+                matched.append("B")
+
+            # 전략 C: 20일선 위 지지 반등
+            if curr_p >= ma20:
+                matched.append("C")
+
+            # 전략 D: 52주/최근 고가 돌파
+            if curr_p >= prev_high * 0.99:
+                matched.append("D")
+
+            # 전략 E: 20일선 첫 돌파 안착
+            if prev_close <= ma20 * 1.01 and curr_p > ma20:
+                matched.append("E")
+
+            if not matched:
+                matched.append("A")
 
             sec_info = cls.classify_sector(code, name)
-            score = round(item["trading_val_억"] * (1 + abs(change_rate / 100)), 1)
-            
+            # 모멘텀 점수: 거래대금과 당일 등락률 기반 가중치
+            score = round(item["trading_val_억"] * (1 + (change_rate / 100)) * (1 + (len(matched) - 1) * 0.3), 1)
+
             results.append({
-                "시장": item["market_name"], "종목코드": code, "종목명": name,
-                "섹터정보": sec_info, "현재가": item["curr_p"], "등락률(%)": change_rate,
-                "거래대금(억원)": item["trading_val_억"], "시가총액(억원)": market_cap_억,
-                "매칭전략": list(set(assigned_strat)), "전략수": len(set(assigned_strat)), "모멘텀점수": score
+                "시장": item["market_name"],
+                "종목코드": code,
+                "종목명": name,
+                "섹터정보": sec_info,
+                "현재가": curr_p,
+                "등락률(%)": change_rate,
+                "거래대금(억원)": item["trading_val_억"],
+                "시가총액(억원)": market_cap_억,
+                "매칭전략": matched,
+                "전략수": len(matched),
+                "모멘텀점수": score
             })
 
         return results
@@ -318,17 +400,17 @@ class NaverStockScreener:
             all_stocks = list_kospi + list_kosdaq
             if not all_stocks:
                 return themes, pd.DataFrame()
-            df = pd.DataFrame(all_stocks).sort_values(by=["전략수", "모멘텀점수"], ascending=[False, False]).reset_index(drop=True)
+            # 거래대금 및 모멘텀 종합 정렬
+            df = pd.DataFrame(all_stocks).sort_values(by=["거래대금(억원)", "등락률(%)"], ascending=[False, False]).reset_index(drop=True)
             return themes, df
         except Exception:
             return [], pd.DataFrame()
 
     # =========================================================================
-    # 📢 4대 타임라인 전용 텔레그램 브리핑 메시지 생성기 (손절/3R 제거 & 수급 TOP10 탑재)
+    # 📢 4대 타임라인 전용 텔레그램 브리핑 메시지 생성기 (필터 조건 일치 적용)
     # =========================================================================
     @classmethod
     def generate_0750_global_briefing(cls) -> str:
-        """07:50 모닝 글로벌 매크로 & 야간선물 동향 브리핑"""
         macro = cls.get_global_macro_data()
         regime = cls.get_market_regime()
         today_str = datetime.now().strftime('%Y-%m-%d')
@@ -349,18 +431,18 @@ class NaverStockScreener:
 
     @classmethod
     def generate_supply_leader_top10_briefing(cls, time_label: str = "09:30") -> str:
-        """09:30 및 10:00 실시간 주도 테마 & 수급 TOP 10 브리핑 (외인/기관/프로그램 포함)"""
+        """+5% 이상 & 20일선 위 조건 부합 종목 중 거래대금/수급 상위 TOP 10 추출"""
         themes, df = cls.run_multi_strategy_screen()
         today_str = datetime.now().strftime('%Y-%m-%d')
         
-        msg = f"⚡ *[{time_label} 실시간 주도 테마 & 수급 주도주 TOP 10]*\n"
-        msg += f"📅 {today_str} 장중 메이저 수급 쏠림 실시간 현황\n\n"
+        msg = f"⚡ *[{time_label} 당일 주도 테마 & 수급 주도주 TOP 10]*\n"
+        msg += f"📅 {today_str} (+5%↑ & 20일선 위 주도주 수급 집계)\n\n"
         
         msg += "🔥 *실시간 주도 테마 TOP 3*\n"
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 대장: `{t['leader']}`\n"
         
-        msg += f"\n💎 *{time_label} 메이저 수급 집중 TOP 10 (외인/기관/프로그램)*\n"
+        msg += f"\n💎 *{time_label} 거래대금 & 메이저 수급 상위 TOP 10*\n"
         top10 = df.head(10)
         if not top10.empty:
             for idx, (_, r) in enumerate(top10.iterrows()):
@@ -368,28 +450,27 @@ class NaverStockScreener:
                 flow = cls.fetch_stock_investor_flow(code)
                 sec = r['섹터정보']
                 
-                f_str = f"{flow['foreign']:+,}주" if flow['foreign'] != 0 else "순매수 유입"
-                i_str = f"{flow['institution']:+,}주" if flow['institution'] != 0 else "동반 매수"
+                f_str = f"{flow['foreign']:+,}주" if flow['foreign'] != 0 else "순매수"
+                i_str = f"{flow['institution']:+,}주" if flow['institution'] != 0 else "동반유입"
                 p_str = f"{flow['program']:+,}주" if flow['program'] != 0 else "유입세"
                 
                 msg += f"*{idx+1}. {r['종목명']}* (`{code}`) {sec['emoji']}\n"
                 msg += f"   현재가: `{r['현재가']:,}원` (*{r['등락률(%)']:+0.2f}%*) | 대금: `{r['거래대금(억원)']:,}억`\n"
                 msg += f"   └ 수급: 외인 `{f_str}` | 기관 `{i_str}` | 프로그램 `{p_str}`\n"
         else:
-            msg += "• 실시간 수급 데이터 집계 중...\n"
+            msg += "• 현재 +5% 이상 & 20일선 위 조건을 충족하는 300억 이상 주도주 탐색 중...\n"
             
-        msg += "\n💡 *수급 분석 요약*: 외국인 및 프로그램 동반 순매수 상위 대장주 중심 집중 대응 권장."
+        msg += "\n💡 *수급 분석 요약*: 20일선 위에서 대량 거래대금이 실린 +5% 이상 주도 대장주 집중 대응."
         return msg
 
     @classmethod
     def generate_1530_closing_briefing(cls) -> str:
-        """15:30 장 마감 종합 결산 브리핑"""
         themes, df = cls.run_multi_strategy_screen()
         regime = cls.get_market_regime()
         today_str = datetime.now().strftime('%Y-%m-%d')
         
         msg = f"🏁 *[15:30 장 마감 종합 결산 브리핑]*\n"
-        msg += f"📅 {today_str} 국내 증시 마감 총괄 브리핑\n\n"
+        msg += f"📅 {today_str} 국내 증시 최종 마감 총괄\n\n"
         msg += "📊 *오늘의 지수 마감 결산*\n"
         msg += f"• 코스피: `{regime['kospi_close']:,}pt` (*{regime['kospi_change_pct']:+0.2f}%*)\n"
         msg += f"• 시장 상태: {regime['badge']}\n\n"
@@ -398,10 +479,10 @@ class NaverStockScreener:
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 1등 대장: `{t['leader']}`\n"
             
-        msg += "\n🏆 *오늘의 최종 수급 주도주 TOP 5 결산*\n"
+        msg += "\n🏆 *오늘의 최종 주도주 (+5%↑ & 20일선 위) TOP 5 결산*\n"
         for idx, (_, r) in enumerate(df.head(5).iterrows()):
             sec = r['섹터정보']
             msg += f"{idx+1}. *{r['종목명']}* {sec['emoji']} 마감가: `{r['현재가']:,}원` (*{r['등락률(%)']:+0.2f}%*) | `{r['거래대금(억원)']:,}억`\n"
             
-        msg += "\n📌 *내일장 대응 전략*: 오늘 수급이 연속 유입된 주도 섹터의 눌림목 공략 준비."
+        msg += "\n📌 *내일장 대응 전략*: 20일선 지지력을 입증한 강한 주도 섹터의 눌림목 공략 준비."
         return msg
