@@ -12,7 +12,7 @@ from google import genai
 import streamlit.components.v1 as components
 
 from main import SamsungSecuritiesParser, TradeFIFOEngine, TradingMetricsAnalyzer, get_best_available_model
-from screener import NaverStockScreener
+from screener import NaverStockScreener, parse_naver_change_rate
 from notifier import TelegramNotifier
 
 CONFIG_DIR = Path(__file__).parent / "user_data"
@@ -24,7 +24,7 @@ OLD_WATCHLIST_FILE = Path(__file__).parent / "watchlist.json"
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
 # -------------------------------------------------------------
-# 1. UI 설정 & 고품격 핀테크 라이트 테마
+# 1. UI 설정 & 라이트 테마
 # -------------------------------------------------------------
 st.set_page_config(
     page_title="Alpha Desk Trading Engine",
@@ -36,14 +36,14 @@ st.set_page_config(
 query_params = st.query_params
 active_tab = query_params.get("tab", "screener")
 
-# 계정 유실 방지: spark 등 특정 계정 우선 유지
+# 계정 유실 방지: spark 계정 기본 유지
 url_user = query_params.get("user", "").strip()
 if "current_user" not in st.session_state:
     st.session_state["current_user"] = url_user if (url_user and url_user != "default") else "spark"
 
 current_user = st.session_state["current_user"]
 
-# 브라우저 영구 계정 기억 스크립트 (spark 영구 고정 지원)
+# 브라우저 영구 계정 기억 스크립트
 components.html(f"""
 <script>
     const currentParam = new URLSearchParams(window.parent.location.search).get("user");
@@ -226,11 +226,7 @@ def load_user_credentials(user_id: str):
         "tg_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
         "tg_chat_id": os.getenv("TELEGRAM_CHAT_ID", "")
     }
-    
-    # 1. 대상 사용자 파일 확인
     cfg_file = get_user_config_file(user_id)
-    
-    # 2. 없으면 spark 또는 config.json 등에서 복원
     if not cfg_file.exists():
         fallback_files = [CONFIG_DIR / "config_spark.json", OLD_CONFIG_FILE, CONFIG_DIR / "config_default.json"]
         for fb in fallback_files:
@@ -256,7 +252,6 @@ def load_user_credentials(user_id: str):
     return creds
 
 def get_all_registered_configs() -> list:
-    """등록된 모든 계정(spark 등)의 설정 반환"""
     configs = []
     seen_chats = set()
     for f_path in CONFIG_DIR.glob("config_*.json"):
@@ -405,7 +400,7 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
             st.toast(f"✅ [{row['종목명']}] {current_user}님 포트폴리오에 등록 완료!")
 
 # -------------------------------------------------------------
-# 5. 텔레그램 한국 시간(KST) 기준 무인 자동 발송 스케줄러
+# 5. 텔레그램 한국 시간(KST) 무인 자동 발송 스케줄러
 # -------------------------------------------------------------
 kst = timezone(timedelta(hours=9))
 now_kst = datetime.now(kst)
@@ -416,7 +411,6 @@ if "auto_briefing_sent" not in st.session_state:
     st.session_state["auto_briefing_sent"] = {}
 sent_dict = st.session_state["auto_briefing_sent"]
 
-# 모든 등록된 사용자 계정(spark 등)으로 일괄 자동 전송
 active_configs = get_all_registered_configs()
 if not active_configs:
     saved_creds = load_user_credentials(current_user)
@@ -488,12 +482,12 @@ def render_live_market_dashboard():
 render_live_market_dashboard()
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (시세만 실시간 매핑)
+# TAB 1: 퀀트 스크리너 (💡 +5% 이상 & 20일선 위 실시간 엄격 필터링)
 # -------------------------------------------------------------
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
     with c_tit:
-        st.markdown("<h4 style='color:#0f172a; font-weight:800; margin:0;'>🔥 주도 테마 & 메이저 주도주</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color:#0f172a; font-weight:800; margin:0;'>🔥 주도 테마 & 메이저 주도주 (+5%↑)</h4>", unsafe_allow_html=True)
     with c_btn:
         run_scan = st.button("🔄 실시간 스캔", use_container_width=True)
 
@@ -508,6 +502,24 @@ if active_tab == "screener":
     if not all_df.empty:
         displayed_codes = all_df['종목코드'].tolist()
         live_price_dict = fetch_batch_realtime_prices(displayed_codes)
+        
+        # 💡 [핵심 2차 검증] 실시간 가격/등락률 조회 후에도 마이너스이거나 +5% 미만인 종목은 즉시 제거
+        filtered_rows = []
+        for _, r in all_df.iterrows():
+            code_key = str(r['종목코드']).zfill(6)
+            live_info = live_price_dict.get(code_key, {})
+            live_p = live_info.get("price", r['현재가'])
+            live_cr = live_info.get("change_rate", r['등락률(%)'])
+            ma20 = r.get("ma20", 0)
+            
+            # 실시간 등락률 +5.0% 이상 & 실시간 주가가 20일선 위에 있는 종목만 승인
+            if live_cr >= 5.0 and (ma20 == 0 or live_p >= ma20):
+                r_copy = r.copy()
+                r_copy['현재가'] = live_p
+                r_copy['등락률(%)'] = live_cr
+                filtered_rows.append(r_copy)
+                
+        all_df = pd.DataFrame(filtered_rows) if filtered_rows else pd.DataFrame()
 
     if top_themes:
         st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP</div>", unsafe_allow_html=True)
@@ -521,9 +533,9 @@ if active_tab == "screener":
             with grid_cols[i]:
                 st.button(btn_label, key=f"theme_btn_{i}", use_container_width=True, help=f"대장주: {theme['leader']}")
 
-    st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 트레이딩 전략별 주도주</h5>", unsafe_allow_html=True)
+    st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 트레이딩 전략별 주도주 (+5%↑ & 20일선 위)</h5>", unsafe_allow_html=True)
     if all_df.empty:
-        st.info("💡 현재 거래대금 및 기술적 타점에 일치하는 주도주를 탐색 중입니다.")
+        st.info("💡 현재 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 거래대금 300억 이상 주도주를 탐색 중입니다. (장 마감 시간대이거나 하락장일 경우 엄격히 필터링됩니다.)")
     else:
         sub_tabs = st.tabs([
             f"전체({len(all_df)})",
@@ -535,11 +547,7 @@ if active_tab == "screener":
                 st.info("해당 조건의 종목이 없습니다.")
                 return
             for _, r in df_subset.iterrows():
-                code_key = str(r['종목코드']).zfill(6)
-                live_info = live_price_dict.get(code_key, {})
-                live_p = live_info.get("price", r['현재가'])
-                live_cr = live_info.get("change_rate", r['등락률(%)'])
-                render_stock_card(r, current_price_live=live_p, change_rate_live=live_cr, tab_prefix=tab_prefix)
+                render_stock_card(r, tab_prefix=tab_prefix)
 
         with sub_tabs[0]: render_list(all_df, "all")
         with sub_tabs[1]: render_list(all_df[all_df['전략수'] >= 2], "golden")
@@ -642,7 +650,7 @@ elif active_tab == "briefing":
 
     # 2. 09:30 실시간 주도 테마 & 수급 TOP 10
     with st.container():
-        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>⚡ 09:30 실시간 주도 테마 & 수급 TOP 10</b><br><small style='color:#64748b;'>개장 초반 1등 테마 및 외인/기관/프로그램 순매수 주도주 10개 추출</small></div>", unsafe_allow_html=True)
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>⚡ 09:30 실시간 주도 테마 & 수급 TOP 10</b><br><small style='color:#64748b;'>개장 초반 1등 테마 및 (+5%↑ & 20일선 위) 외인/기관/프로그램 순매수 주도주 10개 추출</small></div>", unsafe_allow_html=True)
         if st.button("📢 09:30 브리핑 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
                 msg = NaverStockScreener.generate_supply_leader_top10_briefing("09:30")
@@ -653,7 +661,7 @@ elif active_tab == "briefing":
 
     # 3. 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)
     with st.container():
-        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🔥 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)</b><br><small style='color:#64748b;'>오전 수급 연속성 체크 및 외인/기관/프로그램 주도주 10개 재추출</small></div>", unsafe_allow_html=True)
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🔥 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)</b><br><small style='color:#64748b;'>오전 수급 연속성 체크 및 (+5%↑ & 20일선 위) 주도주 10개 재추출</small></div>", unsafe_allow_html=True)
         if st.button("📢 10:00 브리핑 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
                 msg = NaverStockScreener.generate_supply_leader_top10_briefing("10:00")
@@ -664,7 +672,7 @@ elif active_tab == "briefing":
 
     # 4. 15:30 장 마감 종합 결산
     with st.container():
-        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🏁 15:30 장 마감 종합 결산</b><br><small style='color:#64748b;'>당일 지수 결산, 최종 주도 테마 및 장마감 메이저 수급주 총결산</small></div>", unsafe_allow_html=True)
+        st.markdown("<div class='glass-card'><b style='color:#0f172a; font-size:1.0rem;'>🏁 15:30 장 마감 종합 결산</b><br><small style='color:#64748b;'>당일 지수 결산, 최종 주도 테마 및 (+5%↑ & 20일선 위) 메이저 수급주 총결산</small></div>", unsafe_allow_html=True)
         if st.button("📢 15:30 브리핑 즉시 발송", use_container_width=True):
             if tg_t and tg_c:
                 msg = NaverStockScreener.generate_1530_closing_briefing()
