@@ -11,6 +11,7 @@ from alpha_investor.config import settings
 from alpha_investor.kis_provider import KisConfigurationError, KisMarketProvider
 from alpha_investor.market_intelligence import leader_groups, new_high_candidates, sample_market_rows
 from alpha_investor.strategy_engine import CORE_SECTOR_KEYWORDS, exit_plan
+from alpha_investor.free_korea_provider import FreeDataUnavailable, FreeKoreaProvider
 
 st.set_page_config(page_title="Alpha Desk", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""<style>
@@ -21,10 +22,14 @@ market_rows=sample_market_rows()
 @st.cache_data(ttl=settings.market_refresh_seconds, show_spinner=False)
 def current_indices():
     try:
-        return KisMarketProvider().major_indices(), None
-    except (KisConfigurationError, RuntimeError, KeyError, ValueError, OSError) as exc:
-        # No estimate is ever labelled live: the UI exposes the integration state.
-        return [], str(exc)
+        quotes=KisMarketProvider().major_indices()
+        return quotes, 'live'
+    except Exception as exc:
+        try:
+            return FreeKoreaProvider().daily_indices(), 'eod'
+        except Exception as fallback_exc:
+            # No estimate is ever labelled live: the UI exposes the integration state.
+            return [], f'{exc} / 대체 데이터: {fallback_exc}'
 
 with st.sidebar:
     st.title("◈ ALPHA DESK"); st.caption("결정 지원 · 리스크 관리")
@@ -43,7 +48,8 @@ if page=="오늘의 브리핑":
     if indices:
         a,b,c,d=st.columns(4)
         for col,q in zip([a,b],indices): col.metric(q.name,f"{q.value:,.2f}",f"{q.change:+.2f} · {q.change_pct:+.2f}%")
-        c.metric("시장 체력",f"{regime.score}/100","추세·모멘텀"); d.metric("시세 기준",indices[0].as_of,"KIS 실시간 조회")
+        c.metric("시장 체력",f"{regime.score}/100","추세·모멘텀"); d.metric("시세 기준",indices[0].as_of,indices[0].source)
+        if index_error == 'eod': st.warning('현재는 무키 대체 경로의 일봉 데이터입니다. 장중 실시간 시세 또는 매매 판단용으로 사용하지 마세요.')
     else:
         a,b,c,d=st.columns(4); a.metric("시장 체력",f"{regime.score}/100","추세·모멘텀"); b.metric("오늘 검토 후보",sum(x.total>=65 for x in scores.values()),"데모 데이터"); c.metric("보유 위험 알림","0건","데모 기준"); d.metric("실시간 연동","미설정","KIS API 키 필요")
         st.info("실시간 KOSPI/KOSDAQ는 KIS Open API 키를 `.env`에 설정하면 표시됩니다. 지금은 지수 값을 임의로 표시하지 않습니다.")
@@ -132,6 +138,14 @@ elif page=="검증·일지":
     header("전략 검증과 거래 복기","과거 성과는 미래 수익을 보장하지 않습니다. 표본 외 검증과 비용 반영 없이는 전략을 배포하지 마세요."); m=performance_metrics([.03,-.02,.06,-.01,.04,-.03,.02])
     for col,(label,value) in zip(st.columns(6),[("거래 수",m['trades']),("승률",f"{m['win_rate']}%"),("PF",m['profit_factor']),("MDD",f"{m['mdd']}%"),("기대값",f"{m['expectancy']}%"),("최대 연속 손실",m['max_consecutive_losses'])]): col.metric(label,value)
     st.warning("표시값은 데모입니다. 실제 백테스트에는 수수료·세금·슬리피지·상장폐지·당시 이용 가능 데이터·체결 가능성을 포함해야 합니다."); st.markdown("#### 거래 일지에 반드시 남길 것\n\n진입 당시 근거 · 사전 손절 · 실제 청산 이유 · 계획 준수 여부 · 감정 상태 · 개선할 규칙")
+    st.divider(); header("CSV 기반 규칙 검증","Open, High, Low, Close, Signal 컬럼을 가진 일봉 파일을 올리면 신호 다음 날 시가 진입·-6%·3R·트레일링·40일 타임스탑 기준으로 계산합니다.")
+    file=st.file_uploader("일봉 CSV 업로드",type='csv')
+    if file:
+        from alpha_investor.backtest_engine import run_daily_backtest
+        try:
+            result=run_daily_backtest(pd.read_csv(file)); metric=result['metrics']; st.json(metric); st.caption(result['assumptions'])
+            if not result['trades'].empty: st.dataframe(result['trades'],hide_index=True,width='stretch')
+        except (ValueError,KeyError) as exc: st.error(str(exc))
 
 elif page=="아침 브리핑":
     from alpha_investor.briefing import load_brief, render_brief
@@ -148,4 +162,13 @@ elif page=="아침 브리핑":
 else:
     header("연동·운영 체크리스트","알림부터 시작하지 말고 데이터 품질, 책임 경계, 장애 대응을 먼저 고정하세요.")
     st.markdown("**1. 공식 데이터 어댑터** — 시세/체결, 공시, 실적, 투자자별 수급을 출처와 시점까지 저장  \n**2. 이벤트 엔진** — 장전·장중·장후 작업을 분리하고 같은 이벤트의 중복 전송을 차단  \n**3. 알림 채널** — Telegram Bot API 우선. KakaoTalk은 공식 비즈니스/채널 API 또는 조직 소유 공식 게이트웨이만 사용  \n**4. 보안·감사** — 토큰은 환경변수/비밀저장소, 알림·데이터 오류는 로그와 상태 화면으로 추적  \n**5. 서비스 신뢰** — 데이터 갱신 시각, 데이터 공백, 백테스트 가정, 투자 유의문을 항상 표기")
-    st.code("streamlit run app.py\npython -m alpha_investor.scheduler\npython -m alpha_investor.scheduler --morning-brief",language="powershell")
+    st.code("streamlit run app.py\npython -m alpha_investor.scheduler\npython -m alpha_investor.scheduler --morning-brief\npython -m alpha_investor.scheduler --collect-eod",language="powershell")
+    st.divider(); header("데이터 품질·테마 검토","수집 성공 여부와 라벨의 사람 검토 이력을 보여줍니다.")
+    health=repo.recent_health()
+    if health: st.dataframe(pd.DataFrame(health,columns=['출처','데이터셋','기준시각','행수','상태','상세','기록시각']),hide_index=True,width='stretch')
+    else: st.info('아직 수집 실행 이력이 없습니다. `--collect-eod` 실행 후 상태가 기록됩니다.')
+    st.markdown('#### 종목 테마 검토')
+    code=st.text_input('종목 코드',placeholder='예: 005930'); primary=st.selectbox('대표 테마',['미분류',*CORE_SECTOR_KEYWORDS.keys()]); secondary=st.text_input('보조 테마'); rationale=st.text_input('검토 근거')
+    if st.button('테마 매핑 저장') and code: repo.save_theme_mapping(code,primary,secondary,rationale); st.success('테마 검토 이력을 저장했습니다.')
+    mappings=repo.theme_mappings()
+    if mappings: st.dataframe(pd.DataFrame(mappings,columns=['종목코드','대표 테마','보조 테마','검토 근거','검토시각']),hide_index=True,width='stretch')

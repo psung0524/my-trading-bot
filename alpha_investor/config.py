@@ -21,5 +21,6 @@ class Settings:
     kis_app_secret: str = os.getenv("KIS_APP_SECRET", "")
     kis_base_url: str = os.getenv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
     market_refresh_seconds: int = int(os.getenv("MARKET_REFRESH_SECONDS", "20"))
+    data_mode: str = os.getenv("DATA_MODE", "auto").lower()
 
 settings = Settings()

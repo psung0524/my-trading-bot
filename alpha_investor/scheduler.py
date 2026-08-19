@@ -5,6 +5,7 @@ from .repository import Repository
 from .data_provider import SampleProvider
 from .monitor import position_events
 from .briefing import send_morning_brief
+from .eod_collector import collect_krx_eod
 
 def run_once():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -15,8 +16,12 @@ if __name__=='__main__':
     import argparse
     parser=argparse.ArgumentParser()
     parser.add_argument('--morning-brief',action='store_true')
+    parser.add_argument('--collect-eod',action='store_true')
     args=parser.parse_args()
-    if args.morning_brief:
+    if args.collect_eod:
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+        logging.info('EOD rows collected: %s', collect_krx_eod(Repository()))
+    elif args.morning_brief:
         logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
         logging.info('morning briefing delivered to: %s', send_morning_brief())
     else:
