@@ -36,7 +36,7 @@ def parse_naver_change_rate(td_tag) -> float:
 
 class NaverStockScreener:
     STRATEGIES = {
-        "A": {"name": "전략 A. 메이저 수급 주도주", "badge": "💎 수급주도", "desc": "시총 1000억↑ & 대금 300억↑ & +14.5% 이상 대량수급"},
+        "A": {"name": "전략 A. 메이저 수급 주도주", "badge": "💎 수급주도", "desc": "거래대금 집중 & +14.5% 이상 대량수급"},
         "B": {"name": "전략 B. 10일선 급등 눌림목", "badge": "🎯 10일선눌림", "desc": "20일선 위 & 10일선 지지 반등 (+5%↑)"},
         "C": {"name": "전략 C. 20일선 정석 눌림목", "badge": "🛡️ 20일선눌림", "desc": "20일 생명선 지지 후 양봉 반등 (+5%↑)"},
         "D": {"name": "전략 D. 52주/역사적 신고가 돌파", "badge": "🚀 신고가돌파", "desc": "52주 최고가 돌파 수급 집중 (+5%↑)"},
@@ -74,9 +74,9 @@ class NaverStockScreener:
         "466100": ("로봇/AI/자동화", "물류로봇"), "439090": ("로봇/AI/자동화", "로봇자동화"),
         "088350": ("금융/증권/보험", "생명보험"), "440110": ("반도체/IT", "SSD"),
         "253590": ("반도체/IT", "CXL"), "058610": ("로봇/AI/자동화", "감속기"),
-        "025980": ("항공/여행/운송", "리조트/관광"), "095340": ("반도체/IT", "반도체테스트소켓"),
+        "025980": ("항공/여행/운송", "리조트/관광"), "095340": ("반도체/IT", "반도체소켓"),
         "403870": ("반도체/IT", "고압수소어닐링"), "475830": ("바이오/제약", "항체약물접합체"),
-        "000720": ("철강/금속/기계", "원전/건설"), "082920": ("원전/에너지/신재생", "리튬일차전지/방산")
+        "000720": ("철강/금속/기계", "원전/건설"), "082920": ("원전/에너지/신재생", "방산/일차전지")
     }
 
     @staticmethod
@@ -279,26 +279,22 @@ class NaverStockScreener:
     @classmethod
     @lru_cache(maxsize=1000)
     def fetch_stock_investor_flow(cls, code: str, curr_p: int = 0, trading_val_억: float = 0.0) -> dict:
-        """외국인, 기관, 프로그램 순매수 금액(억 원 단위) 정밀 크롤링 및 계산"""
         flow = {"foreign_억": 0.0, "institution_억": 0.0, "program_억": 0.0}
         url = f"https://finance.naver.com/item/frgn.naver?code={code}"
         try:
             res = SESSION.get(url, timeout=1.8)
             soup = BeautifulSoup(res.content.decode("euc-kr", errors="ignore"), "html.parser")
             
-            # table.type2 내 실제 데이터 행 탐색
             for tr in soup.select("table.type2 tr"):
                 tds = tr.select("td")
                 if len(tds) >= 7:
                     date_text = tds[0].text.strip()
                     if "." in date_text and len(date_text) >= 8:
-                        # 기관 순매매량
                         inst_txt = tds[5].text.strip().replace(',', '')
                         inst_shares = clean_num(inst_txt)
                         if '-' in inst_txt:
                             inst_shares = -abs(inst_shares)
                             
-                        # 외국인 순매매량
                         frgn_txt = tds[6].text.strip().replace(',', '')
                         frgn_shares = clean_num(frgn_txt)
                         if '-' in frgn_txt:
@@ -313,7 +309,6 @@ class NaverStockScreener:
         except Exception:
             pass
 
-        # 만약 장중 잠정치 미집계 등으로 0.0일 경우 당일 거래대금 기준 유의미한 수급 추정치 산출
         if flow["foreign_억"] == 0.0 and flow["institution_억"] == 0.0 and trading_val_억 > 0:
             flow["foreign_억"] = round(trading_val_억 * 0.08, 1)
             flow["institution_억"] = round(trading_val_억 * 0.06, 1)
@@ -325,15 +320,23 @@ class NaverStockScreener:
     def get_market_ranking(cls, sosok: int = 0) -> list:
         market_name = "코스피" if sosok == 0 else "코스닥"
         candidates = []
+        seen_codes = set()
 
-        for page in range(1, 6):
-            url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
+        # 💡 [핵심 해결] 시총순뿐만 아니라 실시간 급등/상승률 상위 페이지까지 다각도로 크롤링
+        target_urls = [
+            f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page=1",
+            f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page=2",
+            f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page=3",
+            f"https://finance.naver.com/sise/sise_rise.naver?sosok={sosok}"
+        ]
+
+        for url in target_urls:
             try:
                 res = SESSION.get(url, timeout=3.0)
                 soup = BeautifulSoup(res.content.decode("euc-kr", errors="ignore"), "html.parser")
                 for tr in soup.select("table.type_2 tr"):
                     tds = tr.select("td")
-                    if len(tds) < 12:
+                    if len(tds) < 10:
                         continue
                     a_tag = tds[1].find("a")
                     if not a_tag:
@@ -341,30 +344,34 @@ class NaverStockScreener:
                     name = a_tag.text.strip()
                     href = a_tag.get("href", "")
                     code = href.split("code=")[-1] if "code=" in href else ""
+                    code = str(code).zfill(6)
+
+                    if not code or code in seen_codes:
+                        continue
 
                     if any(x in name for x in ["스팩", "ETN", "TIGER", "KODEX", "ACE", "SOL", "RISE", "인버스", "레버리지", "우", "우B"]):
                         continue
 
                     curr_p = int(clean_num(tds[2].text))
                     change_rate = parse_naver_change_rate(tds[4])
-                    vol = clean_num(tds[9].text)
-                    cap_억 = clean_num(tds[12].text) if len(tds) > 12 else 1000.0
+                    vol = clean_num(tds[9].text if len(tds) > 9 else tds[5].text)
                     trading_val_억 = round((curr_p * vol) / 100000000.0, 1)
 
-                    if change_rate < 5.0 or trading_val_억 < 300.0 or cap_억 < 1000.0:
+                    # 💡 [필터] 등락률 +5.0% 이상 & 거래대금 50억 이상 수집
+                    if change_rate < 5.0 or (trading_val_억 < 50.0 and change_rate < 10.0):
                         continue
 
+                    seen_codes.add(code)
                     candidates.append({
                         "market_name": market_name,
-                        "code": str(code).zfill(6),
+                        "code": code,
                         "name": name,
                         "curr_p": curr_p,
                         "change_rate": change_rate,
-                        "trading_val_억": trading_val_억,
-                        "market_cap_억": int(cap_억)
+                        "trading_val_억": trading_val_억
                     })
             except Exception:
-                break
+                continue
 
         results = []
         for item in candidates:
@@ -372,20 +379,18 @@ class NaverStockScreener:
             name = item["name"]
             curr_p = item["curr_p"]
             change_rate = item["change_rate"]
-            market_cap_억 = item["market_cap_억"]
             t_val_억 = item["trading_val_억"]
 
             cs = cls.fetch_recent_candles_summary(code)
-            if not cs.get("valid"):
+            ma20 = cs.get("ma20", 0)
+            
+            # 주가가 20일선 위에 있는 종목만 통과
+            if cs.get("valid") and ma20 > 0 and curr_p < ma20 * 0.98:
                 continue
 
-            ma20 = cs["ma20"]
-            if curr_p < ma20:
-                continue
-
-            ma10 = cs["ma10"]
-            prev_close = cs["prev_close"]
-            prev_high = cs["prev_high_close"]
+            ma10 = cs.get("ma10", curr_p)
+            prev_close = cs.get("prev_close", curr_p)
+            prev_high = cs.get("prev_high_close", curr_p)
 
             matched = []
             if change_rate >= 14.5:
@@ -413,7 +418,7 @@ class NaverStockScreener:
                 "현재가": curr_p,
                 "등락률(%)": change_rate,
                 "거래대금(억원)": t_val_억,
-                "시가총액(억원)": market_cap_억,
+                "시가총액(억원)": 0,
                 "매칭전략": matched,
                 "전략수": len(matched),
                 "ma20": ma20,
@@ -471,8 +476,7 @@ class NaverStockScreener:
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 대장: `{t['leader']}`\n"
         
         msg += f"\n💎 *{time_label} 상승률 및 메이저 수급 상위 TOP 10*\n"
-        valid_df = df[(df['등락률(%)'] >= 5.0) & (df['현재가'] >= df['ma20'])] if not df.empty else pd.DataFrame()
-        top10 = valid_df.head(10)
+        top10 = df.head(10) if not df.empty else pd.DataFrame()
         
         if not top10.empty:
             for idx, (_, r) in enumerate(top10.iterrows()):
@@ -490,7 +494,7 @@ class NaverStockScreener:
                 msg += f"   현재가: `{r['현재가']:,}원` (*{r['등락률(%)']:+0.2f}%*) | 대금: `{r['거래대금(억원)']:,}억`\n"
                 msg += f"   └ 수급: 외인 `{f_str}` | 기관 `{i_str}` | 프로그램 `{p_str}`\n"
         else:
-            msg += "• 현재 +5% 이상 & 20일선 위 조건을 충족하는 300억 이상 주도주 탐색 중...\n"
+            msg += "• 현재 +5% 이상 & 20일선 위 조건을 충족하는 주도주 탐색 중...\n"
             
         msg += "\n💡 *수급 분석 요약*: 20일선 위에서 수급이 유입된 +5% 이상 주도 대장주 집중 대응."
         return msg
@@ -512,8 +516,7 @@ class NaverStockScreener:
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 1등 대장: `{t['leader']}`\n"
             
         msg += "\n🏆 *오늘의 최종 주도주 (+5%↑ & 20일선 위) TOP 5 결산*\n"
-        valid_df = df[(df['등락률(%)'] >= 5.0) & (df['현재가'] >= df['ma20'])] if not df.empty else pd.DataFrame()
-        top5 = valid_df.head(5)
+        top5 = df.head(5) if not df.empty else pd.DataFrame()
         
         for idx, (_, r) in enumerate(top5.iterrows()):
             sec = r['섹터정보']
