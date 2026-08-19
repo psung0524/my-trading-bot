@@ -12,7 +12,7 @@ from google import genai
 import streamlit.components.v1 as components
 
 from main import SamsungSecuritiesParser, TradeFIFOEngine, TradingMetricsAnalyzer, get_best_available_model
-from screener import NaverStockScreener, parse_naver_change_rate
+from screener import NaverStockScreener, parse_naver_change_rate, clean_num
 from notifier import TelegramNotifier
 
 CONFIG_DIR = Path(__file__).parent / "user_data"
@@ -282,6 +282,67 @@ def get_cached_screener_data():
 def get_cached_market_regime():
     return NaverStockScreener.get_market_regime()
 
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_theme_all_stocks(theme_name: str, theme_no: str = ""):
+    if not theme_no:
+        return []
+
+    stocks = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    try:
+        url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
+        res = requests.get(url, headers=headers, timeout=3.5)
+        soup = BeautifulSoup(res.content.decode('euc-kr', 'replace'), 'html.parser')
+        
+        for row in soup.select("table.type_5 tr"):
+            name_tag = row.select_one("td.name a")
+            if not name_tag:
+                continue
+            name = name_tag.text.strip()
+            code = str(name_tag['href'].split('code=')[-1].strip()).zfill(6)
+            
+            num_tds = row.select("td.number")
+            curr_p, chg_rate, amount_eok = 0, 0.0, 0.0
+            
+            if len(num_tds) >= 3:
+                try:
+                    curr_p = int(clean_num(num_tds[0].text))
+                    chg_rate = parse_naver_change_rate(num_tds[2])
+                except Exception:
+                    pass
+                    
+            if len(num_tds) >= 7:
+                try:
+                    amount_eok = round(float(clean_num(num_tds[6].text)) / 100.0, 1)
+                except Exception:
+                    pass
+
+            flow_info = NaverStockScreener.fetch_stock_investor_flow(code, curr_p, amount_eok)
+
+            stocks.append({
+                "종목명": name,
+                "종목코드": code,
+                "현재가": curr_p,
+                "등락률(%)": chg_rate,
+                "거래대금(억원)": amount_eok,
+                "전략수": 0,
+                "매칭전략": ["THEME"],
+                "시가총액(억원)": 0,
+                "섹터정보": {
+                    "category": theme_name,
+                    "raw_industry": theme_name,
+                    "emoji": "🔥",
+                    "bg": "#fef3c7",
+                    "color": "#b45309"
+                },
+                "외국인_억": flow_info["foreign_억"],
+                "기관_억": flow_info["institution_억"],
+                "프로그램_억": flow_info["program_억"]
+            })
+    except Exception:
+        pass
+    return stocks
+
 def format_korean_money(amount_eok: float) -> str:
     if amount_eok >= 10000:
         jo = int(amount_eok // 10000)
@@ -457,7 +518,7 @@ def render_live_market_dashboard():
 render_live_market_dashboard()
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (거래대금 500억↑ & +5%↑)
+# TAB 1: 퀀트 스크리너
 # -------------------------------------------------------------
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
@@ -466,6 +527,9 @@ if active_tab == "screener":
     with c_btn:
         run_scan = st.button("🔄 실시간 스캔", use_container_width=True)
 
+    if "selected_theme_filter" not in st.session_state:
+        st.session_state["selected_theme_filter"] = None
+
     if run_scan:
         st.cache_data.clear()
         st.rerun()
@@ -473,41 +537,70 @@ if active_tab == "screener":
     themes_data, all_df = get_cached_screener_data()
     top_themes = themes_data
 
+    # ⚡ 테마 버튼 영역 (클릭 시 전 종목 펼치기 완벽 지원)
     if top_themes:
-        st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP (클릭 시 관련 종목 리스트)</div>", unsafe_allow_html=True)
         t_row1_c1, t_row1_c2 = st.columns(2)
         t_row2_c1, t_row2_c2 = st.columns(2)
         grid_cols = [t_row1_c1, t_row1_c2, t_row2_c1, t_row2_c2]
         
         for i, theme in enumerate(top_themes[:4]):
             t_name = theme['theme_name']
-            btn_label = f"{t_name} (+{theme['change_rate']}%)"
+            is_active = st.session_state["selected_theme_filter"] == t_name
+            btn_label = f"{'✅ ' if is_active else ''}{t_name} (+{theme['change_rate']}%)"
+            
             with grid_cols[i]:
-                st.button(btn_label, key=f"theme_btn_{i}", use_container_width=True, help=f"대장주: {theme['leader']}")
+                if st.button(btn_label, key=f"theme_btn_{i}", use_container_width=True, type="primary" if is_active else "secondary"):
+                    st.session_state["selected_theme_filter"] = None if is_active else t_name
+                    st.session_state["selected_theme_no"] = theme.get("theme_no", "")
+                    st.rerun()
 
-    st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 전략 주도주 (거래대금 상위순)</h5>", unsafe_allow_html=True)
-    if all_df.empty:
-        st.info("💡 현재 거래대금 500억 원 이상 & 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 메이저 주도주를 탐색 중입니다.")
+    st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+    active_theme = st.session_state.get("selected_theme_filter")
+
+    # 🎯 특정 테마를 클릭했을 때 관련 종목 리스트 출력
+    if active_theme:
+        theme_no = st.session_state.get("selected_theme_no", "")
+        with st.spinner(f"[{active_theme}] 테마 관련 종목 조회 중..."):
+            theme_stocks = fetch_theme_all_stocks(active_theme, theme_no)
+
+        c_head, c_clear = st.columns([3, 1])
+        c_head.markdown(f"##### 🎯 [{active_theme}] 전체 관련 종목 ({len(theme_stocks)}개)")
+        if c_clear.button("❌ 전체보기", use_container_width=True):
+            st.session_state["selected_theme_filter"] = None
+            st.rerun()
+
+        if theme_stocks:
+            df_theme = pd.DataFrame(theme_stocks).sort_values(by="거래대금(억원)", ascending=False)
+            for _, r in df_theme.iterrows():
+                render_stock_card(r, tab_prefix="theme_all")
+        else:
+            st.info(f"[{active_theme}] 테마에 등록된 관련 종목을 불러오는 중입니다.")
     else:
-        sub_tabs = st.tabs([
-            f"전체({len(all_df)})",
-            f"다중일치({len(all_df[all_df['전략수'] >= 2])})",
-            "A.수급", "B.10일선", "C.20일선", "D.신고가", "E.바닥턴"
-        ])
-        def render_list(df_subset, tab_prefix: str):
-            if df_subset.empty:
-                st.info("해당 조건의 종목이 없습니다.")
-                return
-            for _, r in df_subset.iterrows():
-                render_stock_card(r, tab_prefix=tab_prefix)
+        # 기본 5대 정밀 전략 주도주 출력
+        st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 전략 주도주 (거래대금 상위순)</h5>", unsafe_allow_html=True)
+        if all_df.empty:
+            st.info("💡 현재 거래대금 500억 원 이상 & 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 메이저 주도주를 탐색 중입니다.")
+        else:
+            sub_tabs = st.tabs([
+                f"전체({len(all_df)})",
+                f"다중일치({len(all_df[all_df['전략수'] >= 2])})",
+                "A.수급", "B.10일선", "C.20일선", "D.신고가", "E.바닥턴"
+            ])
+            def render_list(df_subset, tab_prefix: str):
+                if df_subset.empty:
+                    st.info("해당 조건의 종목이 없습니다.")
+                    return
+                for _, r in df_subset.iterrows():
+                    render_stock_card(r, tab_prefix=tab_prefix)
 
-        with sub_tabs[0]: render_list(all_df, "all")
-        with sub_tabs[1]: render_list(all_df[all_df['전략수'] >= 2], "golden")
-        with sub_tabs[2]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'A' in x)], "strat_a")
-        with sub_tabs[3]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'B' in x)], "strat_b")
-        with sub_tabs[4]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'C' in x)], "strat_c")
-        with sub_tabs[5]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'D' in x)], "strat_d")
-        with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
+            with sub_tabs[0]: render_list(all_df, "all")
+            with sub_tabs[1]: render_list(all_df[all_df['전략수'] >= 2], "golden")
+            with sub_tabs[2]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'A' in x)], "strat_a")
+            with sub_tabs[3]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'B' in x)], "strat_b")
+            with sub_tabs[4]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'C' in x)], "strat_c")
+            with sub_tabs[5]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'D' in x)], "strat_d")
+            with sub_tabs[6]: render_list(all_df[all_df['매칭전략'].apply(lambda x: 'E' in x)], "strat_e")
 
 # -------------------------------------------------------------
 # TAB 2: 감시 포트폴리오
