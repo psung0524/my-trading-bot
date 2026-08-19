@@ -270,7 +270,6 @@ class NaverStockScreener:
                 ma20 = df['close'].tail(20).mean()
                 prev_high_close = df['close'].iloc[:-1].max()
                 
-                # 캔들 기반 정확한 당일 거래대금(억 원) 계산
                 today_trading_val_억 = round((curr['close'] * curr['volume']) / 100000000.0, 1)
                 
                 return {
@@ -359,7 +358,6 @@ class NaverStockScreener:
                     curr_p = int(clean_num(tds[2].text))
                     change_rate = parse_naver_change_rate(tds[4])
 
-                    # 💡 1차 필터: 당일 상승률 +5.0% 이상 종목만 후보군에 편입
                     if change_rate < 5.0:
                         continue
 
@@ -385,15 +383,14 @@ class NaverStockScreener:
             if not cs.get("valid"):
                 continue
 
-            # 💡 정확한 당일 거래대금(억 원)
             t_val_억 = cs.get("trading_val_억", 0.0)
 
-            # 💡 [필수 원칙 1] 거래대금 500억 원 이상 절대 필터
+            # 거래대금 500억 원 이상 절대 필터
             if t_val_억 < 500.0:
                 continue
 
             ma20 = cs.get("ma20", 0)
-            # 💡 [필수 원칙 2] 주가가 20일선 위에 위치해야 함
+            # 주가가 20일선 위에 위치해야 함
             if ma20 > 0 and curr_p < ma20:
                 continue
 
@@ -447,8 +444,8 @@ class NaverStockScreener:
             all_stocks = list_kospi + list_kosdaq
             if not all_stocks:
                 return themes, pd.DataFrame()
-            # 거래대금 높은 순으로 정렬
-            df = pd.DataFrame(all_stocks).sort_values(by=["거래대금(억원)", "등락률(%)"], ascending=[False, False]).reset_index(drop=True)
+            # 💡 [핵심] 거래대금 500억 이상 주도주 중 '상승률(등락률)' 높은 순서대로 내림차순 정렬
+            df = pd.DataFrame(all_stocks).sort_values(by=["등락률(%)", "거래대금(억원)"], ascending=[False, False]).reset_index(drop=True)
             return themes, df
         except Exception:
             return [], pd.DataFrame()
@@ -478,16 +475,16 @@ class NaverStockScreener:
         themes, df = cls.run_multi_strategy_screen()
         today_str = datetime.now().strftime('%Y-%m-%d')
         
-        msg = f"⚡ *[{time_label} 당일 거래대금 500억↑ 메이저 주도주 TOP 10]*\n"
+        msg = f"⚡ *[{time_label} 당일 상승률 상위 메이저 주도주 TOP 10]*\n"
         msg += f"📅 {today_str} (대금 500억↑ & +5%↑ & 20일선 위)\n\n"
         
         msg += "🔥 *실시간 주도 테마 TOP 3*\n"
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 대장: `{t['leader']}`\n"
         
-        msg += f"\n💎 *{time_label} 거래대금 & 메이저 수급 상위 TOP 10*\n"
+        msg += f"\n💎 *{time_label} 상승률 & 메이저 수급 상위 TOP 10*\n"
         valid_df = df[(df['거래대금(억원)'] >= 500.0) & (df['등락률(%)'] >= 5.0)] if not df.empty else pd.DataFrame()
-        top10 = valid_df.head(10)
+        top10 = valid_df.sort_values(by="등락률(%)", ascending=False).head(10)
         
         if not top10.empty:
             for idx, (_, r) in enumerate(top10.iterrows()):
@@ -526,9 +523,9 @@ class NaverStockScreener:
         for i, t in enumerate(themes[:3]):
             msg += f"{i+1}. *{t['theme_name']}* (+{t['change_rate']}%) 👑 1등 대장: `{t['leader']}`\n"
             
-        msg += "\n🏆 *오늘의 최종 주도주 (대금 500억↑ & +5%↑) TOP 5 결산*\n"
+        msg += "\n🏆 *오늘의 최종 주도주 (상승률 상위순) TOP 5 결산*\n"
         valid_df = df[(df['거래대금(억원)'] >= 500.0) & (df['등락률(%)'] >= 5.0)] if not df.empty else pd.DataFrame()
-        top5 = valid_df.head(5)
+        top5 = valid_df.sort_values(by="등락률(%)", ascending=False).head(5)
         
         for idx, (_, r) in enumerate(top5.iterrows()):
             sec = r['섹터정보']
