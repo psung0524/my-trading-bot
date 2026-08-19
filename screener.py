@@ -209,9 +209,10 @@ class NaverStockScreener:
                     continue
                 theme_name = name_tag.text.strip()
                 theme_href = name_tag.get("href", "")
+                theme_no = theme_href.split("no=")[-1].strip() if "no=" in theme_href else ""
                 change_rate = parse_naver_change_rate(tds[1])
 
-                if change_rate > 0.5 and theme_href:
+                if change_rate > 0.3 and theme_href:
                     detail_url = f"https://finance.naver.com{theme_href}"
                     leader_name = "확인중"
                     member_stocks = []
@@ -229,7 +230,13 @@ class NaverStockScreener:
                             leader_name = member_stocks[0]
                     except Exception:
                         pass
-                    themes.append({"theme_name": theme_name, "change_rate": change_rate, "leader": leader_name, "member_stocks": member_stocks})
+                    themes.append({
+                        "theme_name": theme_name,
+                        "theme_no": theme_no,
+                        "change_rate": change_rate,
+                        "leader": leader_name,
+                        "member_stocks": member_stocks
+                    })
                 if len(themes) >= 4:
                     break
         except Exception:
@@ -284,7 +291,6 @@ class NaverStockScreener:
         try:
             res = SESSION.get(url, timeout=1.8)
             soup = BeautifulSoup(res.content.decode("euc-kr", errors="ignore"), "html.parser")
-            
             for tr in soup.select("table.type2 tr"):
                 tds = tr.select("td")
                 if len(tds) >= 7:
@@ -322,7 +328,6 @@ class NaverStockScreener:
         candidates = []
         seen_codes = set()
 
-        # 💡 [정확한 거래량/대금 수집] 시가총액 상위 10개 페이지(총 500개 종목)를 안정적으로 스캔
         for page in range(1, 11):
             url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok={sosok}&page={page}"
             try:
@@ -348,12 +353,10 @@ class NaverStockScreener:
 
                     curr_p = int(clean_num(tds[2].text))
                     change_rate = parse_naver_change_rate(tds[4])
-                    
-                    # 💡 [정확한 거래량 파싱]: tds[9]가 거래량
                     vol = clean_num(tds[9].text)
                     trading_val_억 = round((curr_p * vol) / 100000000.0, 1)
 
-                    # 💡 [필수 원칙 1] 거래대금 500억 원 이상 & 당일 등락률 +5.0% 이상 필수 통과 (예외 없음)
+                    # 거래대금 500억 이상 & 당일 +5% 이상 필수 필터
                     if trading_val_억 < 500.0 or change_rate < 5.0:
                         continue
 
@@ -379,8 +382,6 @@ class NaverStockScreener:
 
             cs = cls.fetch_recent_candles_summary(code)
             ma20 = cs.get("ma20", 0)
-            
-            # 💡 [필수 원칙 2] 주가가 반드시 20일선 위에 위치해야 함
             if cs.get("valid") and ma20 > 0 and curr_p < ma20:
                 continue
 
@@ -434,7 +435,7 @@ class NaverStockScreener:
             all_stocks = list_kospi + list_kosdaq
             if not all_stocks:
                 return themes, pd.DataFrame()
-            # 💡 거래대금 500억 이상 주도주 중 거래대금 순서대로 정렬
+            # 거래대금 높은 순으로 정렬
             df = pd.DataFrame(all_stocks).sort_values(by=["거래대금(억원)", "등락률(%)"], ascending=[False, False]).reset_index(drop=True)
             return themes, df
         except Exception:
