@@ -361,18 +361,18 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
     tag_label = f"{sec_emoji} {sec_cat}"
     theme_chip = f"<span class='badge-chip' style='background:{sec_bg}; color:{sec_color};'>{tag_label}</span>"
 
-    # 💡 [신규] 외국인, 기관, 프로그램 순매수 금액 포맷팅 및 컬러링
-    f_억 = row.get('외국인_억', 0.0)
-    i_억 = row.get('기관_억', 0.0)
-    p_억 = row.get('프로그램_억', 0.0)
+    # 수급 정보 추출 및 0억 처리 방지
+    f_억 = float(row.get('외국인_억', 0.0))
+    i_억 = float(row.get('기관_억', 0.0))
+    p_억 = float(row.get('프로그램_억', 0.0))
 
-    f_color = "#dc2626" if f_억 > 0 else ("#2563eb" if f_억 < 0 else "#64748b")
-    i_color = "#dc2626" if i_억 > 0 else ("#2563eb" if i_억 < 0 else "#64748b")
-    p_color = "#dc2626" if p_억 > 0 else ("#2563eb" if p_억 < 0 else "#64748b")
+    f_color = "#dc2626" if f_억 > 0 else ("#2563eb" if f_억 < 0 else "#475569")
+    i_color = "#dc2626" if i_억 > 0 else ("#2563eb" if i_억 < 0 else "#475569")
+    p_color = "#dc2626" if p_억 > 0 else ("#2563eb" if p_억 < 0 else "#475569")
 
-    f_txt = f"{f_억:+.1f}억" if f_억 != 0 else "0억"
-    i_txt = f"{i_억:+.1f}억" if i_억 != 0 else "0억"
-    p_txt = f"{p_억:+.1f}억" if p_억 != 0 else "0억"
+    f_txt = f"{f_억:+.1f}억" if f_억 != 0 else "+0.0억"
+    i_txt = f"{i_억:+.1f}억" if i_억 != 0 else "+0.0억"
+    p_txt = f"{p_억:+.1f}억" if p_억 != 0 else "+0.0억"
 
     st.markdown(f"""
     <div class='{card_class}'>
@@ -387,9 +387,9 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
             <strong style='font-size:1.15rem;'>{curr_p:,}원</strong> <span style='color:{'#dc2626' if chg_r>0 else ('#2563eb' if chg_r<0 else '#64748b')}; font-weight:800;'>{chg_r:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
         </div>
         <div style='margin-top: 6px; padding: 6px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.8rem; color: #475569; display: flex; justify-content: space-between;'>
-            <span>외인 <b style='color:{f_color};'>{f_txt}</b></span>
-            <span>기관 <b style='color:{i_color};'>{i_txt}</b></span>
-            <span>프로그램 <b style='color:{p_color};'>{p_txt}</b></span>
+            <span>외인 <b style='color:{f_color}; font-weight:800;'>{f_txt}</b></span>
+            <span>기관 <b style='color:{i_color}; font-weight:800;'>{i_txt}</b></span>
+            <span>프로그램 <b style='color:{p_color}; font-weight:800;'>{p_txt}</b></span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -442,19 +442,15 @@ def broadcast_briefing(task_key: str, message_builder):
             TelegramNotifier(cfg["token"], cfg["chat_id"]).send_message(msg)
         sent_dict[f"{today_key}_{task_key}"] = True
 
-# 1) 07:50 글로벌 매크로 & 야간선물
 if (now_kst.hour == 7 and now_kst.minute >= 50) or (now_kst.hour == 8 and now_kst.minute < 30):
     broadcast_briefing("0750", NaverStockScreener.generate_0750_global_briefing)
 
-# 2) 09:30 실시간 주도 테마 & 수급 TOP 10
 if now_kst.hour == 9 and 30 <= now_kst.minute <= 55:
     broadcast_briefing("0930", lambda: NaverStockScreener.generate_supply_leader_top10_briefing("09:30"))
 
-# 3) 10:00 실시간 주도 테마 & 수급 TOP 10 (2차)
 if now_kst.hour == 10 and 0 <= now_kst.minute <= 25:
     broadcast_briefing("1000", lambda: NaverStockScreener.generate_supply_leader_top10_briefing("10:00"))
 
-# 4) 15:30 장 마감 종합 결산
 if (now_kst.hour == 15 and now_kst.minute >= 30) or (now_kst.hour == 16 and now_kst.minute <= 30):
     broadcast_briefing("1530", NaverStockScreener.generate_1530_closing_briefing)
 
@@ -500,7 +496,7 @@ def render_live_market_dashboard():
 render_live_market_dashboard()
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (상승률 높은 순 정렬)
+# TAB 1: 퀀트 스크리너 (상승률 높은 순 정렬 & 수급 유지)
 # -------------------------------------------------------------
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
@@ -535,7 +531,6 @@ if active_tab == "screener":
                 r_copy['등락률(%)'] = live_cr
                 filtered_rows.append(r_copy)
                 
-        # 💡 [핵심] 실시간 가격 반영 후에도 상승률 높은 순 내림차순 정렬
         if filtered_rows:
             all_df = pd.DataFrame(filtered_rows).sort_values(by="등락률(%)", ascending=False).reset_index(drop=True)
         else:
@@ -566,7 +561,6 @@ if active_tab == "screener":
             if df_subset.empty:
                 st.info("해당 조건의 종목이 없습니다.")
                 return
-            # 상승률 내림차순 정렬
             sorted_subset = df_subset.sort_values(by="등락률(%)", ascending=False)
             for _, r in sorted_subset.iterrows():
                 render_stock_card(r, tab_prefix=tab_prefix)
