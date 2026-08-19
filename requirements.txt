@@ -1,6 +1,7 @@
-streamlit>=1.36
-pandas>=2.1
-requests>=2.31
-python-dotenv>=1.0
-finance-datareader>=0.9.90
-pykrx>=1.0.48
+streamlit
+pandas
+requests
+beautifulsoup4
+python-dotenv
+google-genai
+openpyxl
