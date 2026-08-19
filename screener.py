@@ -134,30 +134,90 @@ class NaverStockScreener:
             "recommended_strategy": "D", "alloc_guide": "주식 80% / 현금 20%"
         }
 
+    # =========================================================================
+    # 💡 실시간 미국 지수, 국채금리, 유가, 환율 크롤링 파이프라인
+    # =========================================================================
     @staticmethod
     def get_global_macro_data() -> dict:
         macro = {
-            "nasdaq": ("나스닥", "+0.85%"),
-            "sp500": ("S&P 500", "+0.52%"),
-            "dow": ("다우존스", "+0.31%"),
-            "sox": ("필라델피아 반도체", "+1.42%"),
-            "us10y": ("미 국채 10년물", "4.28%"),
-            "wti": ("WTI 원유", "$78.40"),
-            "usdkrw": ("원/달러 환율", "1,342.50원"),
-            "night_future": ("코스피200 야간선물", "+0.45%")
+            "nasdaq": ("나스닥", "+0.00%"),
+            "sp500": ("S&P 500", "+0.00%"),
+            "dow": ("다우존스", "+0.00%"),
+            "sox": ("필라델피아 반도체", "+0.00%"),
+            "us10y": ("미 국채 10년물", "-"),
+            "wti": ("WTI 유가", "-"),
+            "usdkrw": ("원/달러 환율", "1,380.00원"),
+            "night_future": ("코스피200 야간선물", "+0.00%")
         }
+
+        # 1. 미국 주요 지수 크롤링 (나스닥, S&P 500, 다우, 필라델피아 반도체)
+        index_symbols = {
+            ".IXIC": "nasdaq",
+            ".INX": "sp500",
+            ".DJI": "dow",
+            ".SOX": "sox"
+        }
+        for sym, key in index_symbols.items():
+            try:
+                u = f"https://api.stock.naver.com/index/{sym}/basic"
+                r = SESSION.get(u, timeout=1.8)
+                if r.status_code == 200:
+                    d = r.json()
+                    ratio = float(d.get("fluctuationsRatio", 0.0))
+                    sign = "+" if ratio > 0 else ""
+                    macro[key] = (macro[key][0], f"{sign}{ratio:.2f}%")
+            except Exception:
+                pass
+
+        # 2. 환율, WTI 유가, 미 10년물 국채금리 크롤링 (네이버 마켓인덱스)
         try:
             url = "https://finance.naver.com/marketindex/"
             res = SESSION.get(url, timeout=2.0)
             soup = BeautifulSoup(res.text, "html.parser")
+            
+            # 환율
             ex_rate = soup.select_one("div.head_info span.value")
             if ex_rate:
                 macro["usdkrw"] = ("원/달러 환율", f"{ex_rate.text.strip()}원")
-            oil = soup.select_one("ul.data_list li.on div.head_info span.value")
-            if oil:
-                macro["wti"] = ("WTI 원유", f"${oil.text.strip()}")
+                
+            # WTI 국제유가
+            for item in soup.select("ul.data_list li"):
+                txt = item.text
+                if "WTI" in txt or "휘발유" in txt or "유가" in txt:
+                    val = item.select_one("span.value")
+                    chg = item.select_one("span.change")
+                    if val:
+                        v_str = f"${val.text.strip()}"
+                        if chg:
+                            v_str += f" ({chg.text.strip()})"
+                        macro["wti"] = ("WTI 유가", v_str)
+                        break
         except Exception:
             pass
+
+        # 3. 미 국채 10년물 금리 전용 크롤링
+        try:
+            u_bond = "https://finance.naver.com/marketindex/interestDetail.naver?marketindexCd=IRR_US10Y"
+            r_bond = SESSION.get(u_bond, timeout=1.8)
+            s_bond = BeautifulSoup(r_bond.text, "html.parser")
+            v_bond = s_bond.select_one("div.head_info span.value")
+            if v_bond:
+                macro["us10y"] = ("미 국채 10년물", f"{v_bond.text.strip()}%")
+        except Exception:
+            pass
+
+        # 4. 야간선물 등락률 크롤링
+        try:
+            u_night = "https://finance.naver.com/sise/sise_index.naver?code=KPI200"
+            r_n = SESSION.get(u_night, timeout=1.5)
+            s_n = BeautifulSoup(r_n.text, "html.parser")
+            n_val = s_n.select_one("#now_value")
+            n_chg = s_n.select_one("#change_value_and_rate")
+            if n_chg:
+                macro["night_future"] = ("코스피200 야간선물", f"{n_chg.text.strip().split()[-1]}")
+        except Exception:
+            pass
+
         return macro
 
     @staticmethod
@@ -178,26 +238,24 @@ class NaverStockScreener:
 
         if not headlines:
             headlines = [
-                "미 증시, 빅테크 실적 및 인플레이션 지표 주시하며 혼조 마감",
-                "국제유가 및 국채금리 안정세, 위험자산 선호 심리 회복세",
+                "미 증시, 빅테크 실적 및 인플레이션 지표 주시하며 마감",
+                "국제유가 및 국채금리 변동성 안정세, 위험자산 선호 심리 체크",
                 "외국인 선물 수급 유입에 따른 대형 기술주 중심의 반등 기대"
             ]
         return headlines
 
     @classmethod
     def get_us_lead_sectors(cls) -> str:
-        """미국 시장 마감 등락률 기반 국내 연동 주도 섹터 분석"""
         macro = cls.get_global_macro_data()
-        sox_txt = macro.get("sox", ("", "+1.0%"))[1]
-        nasdaq_txt = macro.get("nasdaq", ("", "+0.5%"))[1]
+        sox_txt = macro.get("sox", ("", "+0.0%"))[1]
+        nasdaq_txt = macro.get("nasdaq", ("", "+0.0%"))[1]
         
-        # 반도체 지수 강세 여부에 따라 섹터 매핑
-        if not sox_txt.startswith("-"):
-            return "💻 반도체(HBM/소부장) 및 AI 빅테크 강세 ➡️ 국내 하이닉스·삼성전자 및 AI 인프라 순환매 집중"
-        elif not nasdaq_txt.startswith("-"):
-            return "🤖 AI 소프트웨어 및 바이오 혁신신약 강세 ➡️ 국내 제약바이오 및 로봇/자동화 수급 유입 기대"
+        if not sox_txt.startswith("-") and sox_txt != "+0.00%":
+            return "💻 필라델피아 반도체 강세 ➡️ 국내 하이닉스·삼성전자 및 AI HBM 소부장 주도 유력"
+        elif not nasdaq_txt.startswith("-") and nasdaq_txt != "+0.00%":
+            return "🤖 나스닥 기술주 강세 ➡️ AI 소프트웨어, 로봇 및 바이오 혁신신약 수급 유입 기대"
         else:
-            return "🛡️ 가치주 및 방산/원전 강세 ➡️ 국내 원전, 조선, 방위산업 등 경기방어 주도 섹터 중심 대응"
+            return "🛡️ 매크로 관망/방어 흐름 ➡️ 원전, 방산, 조선 등 실적 기반 가치 주도주 중심 대응"
 
     @classmethod
     def classify_sector(cls, code: str, name: str) -> dict:
@@ -483,14 +541,12 @@ class NaverStockScreener:
             all_stocks = list_kospi + list_kosdaq
             if not all_stocks:
                 return themes, pd.DataFrame()
+            # 상승률(등락률) 높은 순서대로 정렬
             df = pd.DataFrame(all_stocks).sort_values(by=["등락률(%)", "거래대금(억원)"], ascending=[False, False]).reset_index(drop=True)
             return themes, df
         except Exception:
             return [], pd.DataFrame()
 
-    # =========================================================================
-    # 📢 07:50 모닝 글로벌 매크로 브리핑 (미국 마감 섹터 연동 & 핵심 속보 탑재)
-    # =========================================================================
     @classmethod
     def generate_0750_global_briefing(cls) -> str:
         macro = cls.get_global_macro_data()
