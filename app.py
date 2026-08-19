@@ -361,7 +361,6 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
     tag_label = f"{sec_emoji} {sec_cat}"
     theme_chip = f"<span class='badge-chip' style='background:{sec_bg}; color:{sec_color};'>{tag_label}</span>"
 
-    # 수급 정보 추출 및 0억 처리 방지
     f_억 = float(row.get('외국인_억', 0.0))
     i_억 = float(row.get('기관_억', 0.0))
     p_억 = float(row.get('프로그램_억', 0.0))
@@ -496,7 +495,7 @@ def render_live_market_dashboard():
 render_live_market_dashboard()
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (상승률 높은 순 정렬 & 수급 유지)
+# TAB 1: 퀀트 스크리너 (야간/장마감 데이터 보호 로직 적용)
 # -------------------------------------------------------------
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
@@ -521,10 +520,19 @@ if active_tab == "screener":
         for _, r in all_df.iterrows():
             code_key = str(r['종목코드']).zfill(6)
             live_info = live_price_dict.get(code_key, {})
-            live_p = live_info.get("price", r['현재가'])
-            live_cr = live_info.get("change_rate", r['등락률(%)'])
+            
+            # 💡 [핵심 버그 수정] 야간에 live_p나 live_cr이 0으로 오면 크롤링된 원래 값을 우선 사용
+            live_p = live_info.get("price", 0)
+            if live_p == 0:
+                live_p = r['현재가']
+                
+            live_cr = live_info.get("change_rate", 0.0)
+            if live_cr == 0.0:
+                live_cr = r['등락률(%)']
+                
             ma20 = r.get("ma20", 0)
             
+            # 음수가 아니고 등락률 +5.0% 이상인 종목 보존
             if live_cr >= 5.0 and (ma20 == 0 or live_p >= ma20):
                 r_copy = r.copy()
                 r_copy['현재가'] = live_p
@@ -534,7 +542,7 @@ if active_tab == "screener":
         if filtered_rows:
             all_df = pd.DataFrame(filtered_rows).sort_values(by="등락률(%)", ascending=False).reset_index(drop=True)
         else:
-            all_df = pd.DataFrame()
+            all_df = all_df.sort_values(by="등락률(%)", ascending=False).reset_index(drop=True)
 
     if top_themes:
         st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP</div>", unsafe_allow_html=True)
@@ -550,7 +558,7 @@ if active_tab == "screener":
 
     st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 트레이딩 전략별 주도주 (상승률 상위순)</h5>", unsafe_allow_html=True)
     if all_df.empty:
-        st.info("💡 현재 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 거래대금 300억 이상 주도주를 탐색 중입니다.")
+        st.info("💡 현재 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 주도주를 탐색 중입니다.")
     else:
         sub_tabs = st.tabs([
             f"전체({len(all_df)})",
