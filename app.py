@@ -361,17 +361,35 @@ def render_stock_card(row, current_price_live=None, change_rate_live=None, tab_p
     tag_label = f"{sec_emoji} {sec_cat}"
     theme_chip = f"<span class='badge-chip' style='background:{sec_bg}; color:{sec_color};'>{tag_label}</span>"
 
+    # 💡 [신규] 외국인, 기관, 프로그램 순매수 금액 포맷팅 및 컬러링
+    f_억 = row.get('외국인_억', 0.0)
+    i_억 = row.get('기관_억', 0.0)
+    p_억 = row.get('프로그램_억', 0.0)
+
+    f_color = "#dc2626" if f_억 > 0 else ("#2563eb" if f_억 < 0 else "#64748b")
+    i_color = "#dc2626" if i_억 > 0 else ("#2563eb" if i_억 < 0 else "#64748b")
+    p_color = "#dc2626" if p_억 > 0 else ("#2563eb" if p_억 < 0 else "#64748b")
+
+    f_txt = f"{f_억:+.1f}억" if f_억 != 0 else "0억"
+    i_txt = f"{i_억:+.1f}억" if i_억 != 0 else "0억"
+    p_txt = f"{p_억:+.1f}억" if p_억 != 0 else "0억"
+
     st.markdown(f"""
     <div class='{card_class}'>
-        <div style='display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;'>
+        <div style='display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;'>
             <div>
                 {golden_badge}<strong style='font-size:1.1rem; color:#0f172a; font-weight:800;'>{row['종목명']}</strong> <span style='color:#64748b; font-size:0.85rem;'>{row['종목코드']}</span><br>
                 <div style='margin-top:4px;'>{theme_chip}</div>
             </div>
             <div style='text-align:right;'>{strat_badges}</div>
         </div>
-        <div style='margin-top: 8px; font-size: 1.0rem; color:#0f172a;'>
+        <div style='margin-top: 6px; font-size: 1.0rem; color:#0f172a;'>
             <strong style='font-size:1.15rem;'>{curr_p:,}원</strong> <span style='color:{'#dc2626' if chg_r>0 else ('#2563eb' if chg_r<0 else '#64748b')}; font-weight:800;'>{chg_r:+0.2f}%</span> &nbsp;|&nbsp; 대금 <b>{formatted_money}</b>
+        </div>
+        <div style='margin-top: 6px; padding: 6px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.8rem; color: #475569; display: flex; justify-content: space-between;'>
+            <span>외인 <b style='color:{f_color};'>{f_txt}</b></span>
+            <span>기관 <b style='color:{i_color};'>{i_txt}</b></span>
+            <span>프로그램 <b style='color:{p_color};'>{p_txt}</b></span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -482,7 +500,7 @@ def render_live_market_dashboard():
 render_live_market_dashboard()
 
 # -------------------------------------------------------------
-# TAB 1: 퀀트 스크리너 (💡 +5% 이상 & 20일선 위 실시간 엄격 필터링)
+# TAB 1: 퀀트 스크리너 (상승률 높은 순 정렬)
 # -------------------------------------------------------------
 if active_tab == "screener":
     c_tit, c_btn = st.columns([3, 1])
@@ -503,7 +521,6 @@ if active_tab == "screener":
         displayed_codes = all_df['종목코드'].tolist()
         live_price_dict = fetch_batch_realtime_prices(displayed_codes)
         
-        # 💡 [핵심 2차 검증] 실시간 가격/등락률 조회 후에도 마이너스이거나 +5% 미만인 종목은 즉시 제거
         filtered_rows = []
         for _, r in all_df.iterrows():
             code_key = str(r['종목코드']).zfill(6)
@@ -512,14 +529,17 @@ if active_tab == "screener":
             live_cr = live_info.get("change_rate", r['등락률(%)'])
             ma20 = r.get("ma20", 0)
             
-            # 실시간 등락률 +5.0% 이상 & 실시간 주가가 20일선 위에 있는 종목만 승인
             if live_cr >= 5.0 and (ma20 == 0 or live_p >= ma20):
                 r_copy = r.copy()
                 r_copy['현재가'] = live_p
                 r_copy['등락률(%)'] = live_cr
                 filtered_rows.append(r_copy)
                 
-        all_df = pd.DataFrame(filtered_rows) if filtered_rows else pd.DataFrame()
+        # 💡 [핵심] 실시간 가격 반영 후에도 상승률 높은 순 내림차순 정렬
+        if filtered_rows:
+            all_df = pd.DataFrame(filtered_rows).sort_values(by="등락률(%)", ascending=False).reset_index(drop=True)
+        else:
+            all_df = pd.DataFrame()
 
     if top_themes:
         st.markdown("<div style='font-size:0.85rem; font-weight:800; color:#475569; margin-top:8px; margin-bottom:6px;'>⚡ 실시간 급등 테마 TOP</div>", unsafe_allow_html=True)
@@ -533,9 +553,9 @@ if active_tab == "screener":
             with grid_cols[i]:
                 st.button(btn_label, key=f"theme_btn_{i}", use_container_width=True, help=f"대장주: {theme['leader']}")
 
-    st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 트레이딩 전략별 주도주 (+5%↑ & 20일선 위)</h5>", unsafe_allow_html=True)
+    st.markdown("<h5 style='color:#0f172a; font-weight:800; margin-top:10px;'>🎯 5대 정밀 트레이딩 전략별 주도주 (상승률 상위순)</h5>", unsafe_allow_html=True)
     if all_df.empty:
-        st.info("💡 현재 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 거래대금 300억 이상 주도주를 탐색 중입니다. (장 마감 시간대이거나 하락장일 경우 엄격히 필터링됩니다.)")
+        st.info("💡 현재 당일 등락률 +5.0% 이상 & 20일선 위에 위치한 거래대금 300억 이상 주도주를 탐색 중입니다.")
     else:
         sub_tabs = st.tabs([
             f"전체({len(all_df)})",
@@ -546,7 +566,9 @@ if active_tab == "screener":
             if df_subset.empty:
                 st.info("해당 조건의 종목이 없습니다.")
                 return
-            for _, r in df_subset.iterrows():
+            # 상승률 내림차순 정렬
+            sorted_subset = df_subset.sort_values(by="등락률(%)", ascending=False)
+            for _, r in sorted_subset.iterrows():
                 render_stock_card(r, tab_prefix=tab_prefix)
 
         with sub_tabs[0]: render_list(all_df, "all")
