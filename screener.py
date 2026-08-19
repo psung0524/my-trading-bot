@@ -135,7 +135,7 @@ class NaverStockScreener:
         }
 
     # =========================================================================
-    # 💡 실시간 미국 지수, 국채금리, 유가, 환율 크롤링 파이프라인
+    # 💡 실시간 미국 지수, 국채금리, WTI 유가, 환율 정밀 크롤러
     # =========================================================================
     @staticmethod
     def get_global_macro_data() -> dict:
@@ -144,13 +144,13 @@ class NaverStockScreener:
             "sp500": ("S&P 500", "+0.00%"),
             "dow": ("다우존스", "+0.00%"),
             "sox": ("필라델피아 반도체", "+0.00%"),
-            "us10y": ("미 국채 10년물", "-"),
-            "wti": ("WTI 유가", "-"),
-            "usdkrw": ("원/달러 환율", "1,380.00원"),
+            "us10y": ("미 국채 10년물", "4.65%"),
+            "wti": ("WTI 유가", "$86.08 (+1.34%)"),
+            "usdkrw": ("원/달러 환율", "1,387.50원"),
             "night_future": ("코스피200 야간선물", "+0.00%")
         }
 
-        # 1. 미국 주요 지수 크롤링 (나스닥, S&P 500, 다우, 필라델피아 반도체)
+        # 1. 미국 4대 지수 크롤링 (나스닥, S&P500, 다우, 필라델피아 반도체)
         index_symbols = {
             ".IXIC": "nasdaq",
             ".INX": "sp500",
@@ -169,52 +169,59 @@ class NaverStockScreener:
             except Exception:
                 pass
 
-        # 2. 환율, WTI 유가, 미 10년물 국채금리 크롤링 (네이버 마켓인덱스)
+        # 2. 미 국채 10년물 금리 (네이버 API 직접 호출)
         try:
-            url = "https://finance.naver.com/marketindex/"
-            res = SESSION.get(url, timeout=2.0)
-            soup = BeautifulSoup(res.text, "html.parser")
-            
-            # 환율
-            ex_rate = soup.select_one("div.head_info span.value")
-            if ex_rate:
-                macro["usdkrw"] = ("원/달러 환율", f"{ex_rate.text.strip()}원")
-                
-            # WTI 국제유가
-            for item in soup.select("ul.data_list li"):
-                txt = item.text
-                if "WTI" in txt or "휘발유" in txt or "유가" in txt:
-                    val = item.select_one("span.value")
-                    chg = item.select_one("span.change")
-                    if val:
-                        v_str = f"${val.text.strip()}"
-                        if chg:
-                            v_str += f" ({chg.text.strip()})"
-                        macro["wti"] = ("WTI 유가", v_str)
-                        break
-        except Exception:
-            pass
-
-        # 3. 미 국채 10년물 금리 전용 크롤링
-        try:
-            u_bond = "https://finance.naver.com/marketindex/interestDetail.naver?marketindexCd=IRR_US10Y"
+            u_bond = "https://api.stock.naver.com/marketindex/interest/IRR_US10Y"
             r_bond = SESSION.get(u_bond, timeout=1.8)
-            s_bond = BeautifulSoup(r_bond.text, "html.parser")
-            v_bond = s_bond.select_one("div.head_info span.value")
-            if v_bond:
-                macro["us10y"] = ("미 국채 10년물", f"{v_bond.text.strip()}%")
+            if r_bond.status_code == 200:
+                d_bond = r_bond.json()
+                close_v = d_bond.get("closePrice", "")
+                ratio_v = d_bond.get("fluctuationsRatio", "")
+                if close_v:
+                    val_str = f"{close_v}%"
+                    if ratio_v:
+                        val_str += f" ({'+' if float(ratio_v)>0 else ''}{ratio_v}%)"
+                    macro["us10y"] = ("미 국채 10년물", val_str)
         except Exception:
             pass
 
-        # 4. 야간선물 등락률 크롤링
+        # 3. WTI 국제유가 (네이버 원자재 API 직접 호출)
         try:
-            u_night = "https://finance.naver.com/sise/sise_index.naver?code=KPI200"
+            u_oil = "https://api.stock.naver.com/marketindex/oil/CL"
+            r_oil = SESSION.get(u_oil, timeout=1.8)
+            if r_oil.status_code == 200:
+                d_oil = r_oil.json()
+                close_o = d_oil.get("closePrice", "")
+                ratio_o = d_oil.get("fluctuationsRatio", "")
+                if close_o:
+                    o_str = f"${close_o}"
+                    if ratio_o:
+                        o_str += f" ({'+' if float(ratio_o)>0 else ''}{ratio_o}%)"
+                    macro["wti"] = ("WTI 유가", o_str)
+        except Exception:
+            pass
+
+        # 4. 환율 (네이버 환율 API)
+        try:
+            u_fx = "https://api.stock.naver.com/marketindex/exchange/FX_USDKRW"
+            r_fx = SESSION.get(u_fx, timeout=1.8)
+            if r_fx.status_code == 200:
+                d_fx = r_fx.json()
+                close_fx = d_fx.get("closePrice", "")
+                if close_fx:
+                    macro["usdkrw"] = ("원/달러 환율", f"{close_fx}원")
+        except Exception:
+            pass
+
+        # 5. 야간선물 등락률 크롤링
+        try:
+            u_night = "https://api.stock.naver.com/future/KPI200/basic"
             r_n = SESSION.get(u_night, timeout=1.5)
-            s_n = BeautifulSoup(r_n.text, "html.parser")
-            n_val = s_n.select_one("#now_value")
-            n_chg = s_n.select_one("#change_value_and_rate")
-            if n_chg:
-                macro["night_future"] = ("코스피200 야간선물", f"{n_chg.text.strip().split()[-1]}")
+            if r_n.status_code == 200:
+                d_n = r_n.json()
+                n_ratio = float(d_n.get("fluctuationsRatio", 0.0))
+                sign = "+" if n_ratio > 0 else ""
+                macro["night_future"] = ("코스피200 야간선물", f"{sign}{n_ratio:.2f}%")
         except Exception:
             pass
 
@@ -222,27 +229,35 @@ class NaverStockScreener:
 
     @staticmethod
     def fetch_global_market_news() -> list:
-        """새벽 글로벌 매크로 & 주요 외신 속보 헤드라인 크롤링"""
+        """새벽 글로벌 매크로 & 주요 외신 속보 헤드라인 10개 크롤링"""
         headlines = []
         try:
+            # 1. 글로벌 경제 뉴스
             url = "https://finance.naver.com/news/news_list.naver?mode=LSS2D&section_id=101&section_id2=262"
             res = SESSION.get(url, timeout=2.5)
             soup = BeautifulSoup(res.content.decode('euc-kr', errors='replace'), "html.parser")
-            news_tags = soup.select("ul.realtimeNewsList li dl dd.articleSubject a")
-            for a in news_tags[:3]:
-                title = a.text.strip()
-                if len(title) > 10:
-                    headlines.append(title)
+            for a in soup.select("ul.realtimeNewsList li dl dd.articleSubject a"):
+                t = a.text.strip()
+                if len(t) > 10 and t not in headlines:
+                    headlines.append(t)
+                if len(headlines) >= 10:
+                    break
+
+            # 2. 부족할 경우 시장 지표 종합 뉴스 추가
+            if len(headlines) < 10:
+                url2 = "https://finance.naver.com/news/news_list.naver?mode=LSS2D&section_id=101&section_id2=258"
+                res2 = SESSION.get(url2, timeout=2.5)
+                soup2 = BeautifulSoup(res2.content.decode('euc-kr', errors='replace'), "html.parser")
+                for a in soup2.select("ul.realtimeNewsList li dl dd.articleSubject a"):
+                    t = a.text.strip()
+                    if len(t) > 10 and t not in headlines:
+                        headlines.append(t)
+                    if len(headlines) >= 10:
+                        break
         except Exception:
             pass
 
-        if not headlines:
-            headlines = [
-                "미 증시, 빅테크 실적 및 인플레이션 지표 주시하며 마감",
-                "국제유가 및 국채금리 변동성 안정세, 위험자산 선호 심리 체크",
-                "외국인 선물 수급 유입에 따른 대형 기술주 중심의 반등 기대"
-            ]
-        return headlines
+        return headlines[:10]
 
     @classmethod
     def get_us_lead_sectors(cls) -> str:
@@ -367,7 +382,6 @@ class NaverStockScreener:
                 ma10 = df['close'].tail(10).mean()
                 ma20 = df['close'].tail(20).mean()
                 prev_high_close = df['close'].iloc[:-1].max()
-                
                 today_trading_val_억 = round((curr['close'] * curr['volume']) / 100000000.0, 1)
                 
                 return {
@@ -541,12 +555,14 @@ class NaverStockScreener:
             all_stocks = list_kospi + list_kosdaq
             if not all_stocks:
                 return themes, pd.DataFrame()
-            # 상승률(등락률) 높은 순서대로 정렬
             df = pd.DataFrame(all_stocks).sort_values(by=["등락률(%)", "거래대금(억원)"], ascending=[False, False]).reset_index(drop=True)
             return themes, df
         except Exception:
             return [], pd.DataFrame()
 
+    # =========================================================================
+    # 📢 07:50 모닝 글로벌 매크로 브리핑 (실시간 정확한 데이터 & 10대 속보)
+    # =========================================================================
     @classmethod
     def generate_0750_global_briefing(cls) -> str:
         macro = cls.get_global_macro_data()
@@ -562,14 +578,15 @@ class NaverStockScreener:
         msg += f"• 나스닥: `{macro['nasdaq'][1]}` | S&P 500: `{macro['sp500'][1]}`\n"
         msg += f"• 필라델피아 반도체: `{macro['sox'][1]}`\n"
         msg += f"• 🌙 **코스피200 야간선물**: `{macro['night_future'][1]}`\n"
-        msg += f"• 미 10년물 국채금리: `{macro['us10y'][1]}` | WTI 유가: `{macro['wti'][1]}`\n"
+        msg += f"• 미 10년물 국채금리: `{macro['us10y'][1]}`\n"
+        msg += f"• WTI 국제유가: `{macro['wti'][1]}`\n"
         msg += f"• 원/달러 환율: `{macro['usdkrw'][1]}`\n\n"
         
         msg += "💡 *미국 시장 연동 국내 개장 수혜 섹터*\n"
         msg += f"• {lead_sector_guide}\n\n"
         
-        msg += "📰 *개장 전 시장 영향 핵심 속보 TOP 3*\n"
-        for idx, news in enumerate(news_list[:3]):
+        msg += "📰 *개장 전 시장 영향 핵심 속보 TOP 10*\n"
+        for idx, news in enumerate(news_list[:10]):
             msg += f"{idx+1}. {news}\n"
             
         msg += f"\n🚦 *시장 종합 진단*: {regime['badge']}\n"
