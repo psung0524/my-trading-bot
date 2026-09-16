@@ -22,7 +22,7 @@ export async function getMasterDetail(workspaceId: string, masterId: string) {
     include: {
       product: { select: { id: true, name: true, url: true } },
       topic: { select: { id: true, title: true, category: true } },
-      channels: { where: { deletedAt: null }, orderBy: [{ channel: "asc" }, { createdAt: "asc" }], include: { assets: { select: { id: true, kind: true } }, renderJobs: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, status: true, step: true, lastError: true } } } },
+      channels: { where: { deletedAt: null }, orderBy: [{ channel: "asc" }, { createdAt: "asc" }], include: { assets: { select: { id: true, kind: true } }, renderJobs: { orderBy: { updatedAt: "desc" }, take: 1, select: { id: true, status: true, step: true, lastError: true } } } },
     },
   });
 }
@@ -34,7 +34,7 @@ export async function getChannelContent(workspaceId: string, channelId: string) 
       master: { include: { product: { select: { id: true, name: true, url: true } } } },
       versions: { orderBy: { version: "desc" }, take: 10, select: { id: true, version: true, source: true, changeSummary: true, createdAt: true } },
       assets: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
-      renderJobs: { orderBy: { createdAt: "desc" }, take: 3 },
+      renderJobs: { orderBy: { updatedAt: "desc" }, take: 3 },
       approvals: { orderBy: { createdAt: "desc" }, take: 5, include: { user: { select: { name: true, email: true } } } },
       publishJobs: { orderBy: { createdAt: "desc" }, take: 3 },
       trackingLinks: { take: 3 },
