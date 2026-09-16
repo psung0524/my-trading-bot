@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "AiUsage" ADD COLUMN     "batch" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "cacheReadTokens" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "cacheWriteTokens" INTEGER NOT NULL DEFAULT 0;

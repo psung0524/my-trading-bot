@@ -1,0 +1,58 @@
+name: content-engine CI
+
+on:
+  push:
+    paths: ["content-engine/**", ".github/workflows/content-engine-ci.yml"]
+  pull_request:
+    paths: ["content-engine/**"]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: content-engine
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: content_engine
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/content_engine?schema=public
+      AUTH_SECRET: ci-only-secret-0123456789abcdef
+      ENCRYPTION_KEY: Y2ktb25seS1lbmNyeXB0aW9uLWtleS0zMmJ5dGVzISE=
+      APP_URL: http://127.0.0.1:3100
+      AUTH_URL: http://127.0.0.1:3100
+      JOB_RUNNER: inline
+      AI_PROVIDER: mock
+      TTS_PROVIDER: mock
+      PRODUCT_ANALYZER: mock
+      STORAGE_PROVIDER: local
+      RATE_LIMIT_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: content-engine/package-lock.json
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          E2E_USE_BUILD: "1"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: content-engine/test-results
