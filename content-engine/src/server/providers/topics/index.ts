@@ -26,7 +26,7 @@ class AITopicSourceProvider implements TopicSourceProvider {
       user: prompt.user,
       schema: candidatesSchema,
       schemaName: prompt.schemaName,
-      context: { sourceType: this.sourceType, product: input.product, existingTitles: input.existingTitles },
+      context: { workspaceId: input.workspaceId, sourceType: this.sourceType, product: input.product, existingTitles: input.existingTitles },
     });
     return res.data.candidates.filter((c) => !input.existingTitles.includes(c.title));
   }

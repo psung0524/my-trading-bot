@@ -70,9 +70,15 @@ export type ValidationResult = z.infer<typeof validationResultSchema>;
 export const threadsVariantSchema = z.enum(["INFO", "OBSERVATION", "ENGAGEMENT"]);
 export type ThreadsVariant = z.infer<typeof threadsVariantSchema>;
 
+/// 생성 결과에 붙는 셀프 체크(플랫폼 규칙 O/X)
+export const selfCheckSchema = z.array(z.object({ item: z.string(), pass: z.boolean() })).default([]);
+
 export const threadsBodySchema = z.object({
   variant: threadsVariantSchema,
   text: z.string().min(1).max(500),
+  /// 게시 후 직접 남길 답글(블로그 링크·자료 안내). 본문에는 링크를 넣지 않는 운영 규칙용
+  replyText: z.string().default(""),
+  selfCheck: selfCheckSchema,
   includeLink: z.boolean().default(true),
   ctaStrength: z.enum(["none", "low", "medium", "high"]).default("low"),
   lessAdLike: z.boolean().default(true),
@@ -111,6 +117,7 @@ export const instagramBodySchema = z.object({
   caption: z.string().default(""),
   hashtags: z.array(z.string()).default([]),
   altTexts: z.array(z.string()).default([]),
+  selfCheck: selfCheckSchema,
   colors: z.object({ primary: z.string(), secondary: z.string(), accent: z.string() }).optional(),
 });
 export type InstagramBody = z.infer<typeof instagramBodySchema>;
@@ -129,6 +136,9 @@ export const blogBodySchema = z.object({
   internalLinks: z.array(z.object({ label: z.string(), url: z.string() })).default([]),
   cta: ctaRefSchema.nullable().default(null),
   thumbnailText: z.string().default(""),
+  /// 원고 맨 아래 태그 10개(검색어 3 + 카테고리 4 + 롱테일 3)
+  tags: z.array(z.string()).default([]),
+  selfCheck: selfCheckSchema,
   factRefs: z.array(z.string()).default([]),
 });
 export type BlogBody = z.infer<typeof blogBodySchema>;
@@ -155,6 +165,7 @@ export const shortsBodySchema = z.object({
   hashtags: z.array(z.string()).default([]),
   thumbnailText: z.string().default(""),
   voice: z.string().default("default"),
+  selfCheck: selfCheckSchema,
   factRefs: z.array(z.string()).default([]),
 });
 export type ShortsBody = z.infer<typeof shortsBodySchema>;

@@ -3,7 +3,7 @@ import { renderMarkdown } from "@/lib/markdown";
 
 export function BlogPreview({ body }: { body: BlogBody }) {
   const html = renderMarkdown(blogToMarkdown(body));
-  return <article className="blog-preview max-w-none rounded-md border bg-card p-6 text-sm" dangerouslySetInnerHTML={{ __html: html }} />;
+  return <article className="blog-preview rounded-md border bg-card p-6 text-sm" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 export function blogToMarkdown(b: BlogBody): string {
@@ -20,5 +20,6 @@ export function blogToMarkdown(b: BlogBody): string {
   if (b.internalLinks.length) parts.push(...b.internalLinks.map((l) => `- [${l.label}](${l.url})`), "");
   if (b.cta) parts.push(`**[${b.cta.label}](${b.cta.url})**`, "");
   if (b.disclaimer) parts.push("---", "", `_${b.disclaimer}_`, "");
+  if (b.tags.length) parts.push(b.tags.map((t) => `#${t.replace(/^#/, "").replace(/\s+/g, "")}`).join(" "), "");
   return parts.join("\n");
 }

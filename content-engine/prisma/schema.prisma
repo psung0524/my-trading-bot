@@ -833,3 +833,21 @@ model ReferencePost {
 
   @@index([workspaceId, channel])
 }
+
+// ---------- AI 사용량 ----------
+
+model AiUsage {
+  id           String   @id @default(cuid())
+  workspaceId  String?
+  promptKey    String
+  provider     String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  /// 예상 비용(USD). 공식 단가표 기준 추정치
+  estimatedUsd Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([workspaceId, createdAt])
+}

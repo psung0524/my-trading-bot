@@ -138,7 +138,7 @@ export async function analyzeStyle(workspaceId: string, productId: string, chann
   if (!product?.brandProfile) throw new Error("브랜드 프로필이 없습니다");
   const prompt = await resolvePrompt("style.analyze", workspaceId);
   const posts = refs.slice(0, 8).map((r) => ({ title: r.title, note: r.note, content: r.content.slice(0, 4000) }));
-  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: styleGuideSchema, schemaName: prompt.schemaName, context: { channel, posts } });
+  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: styleGuideSchema, schemaName: prompt.schemaName, context: { workspaceId, channel, posts } });
   const settings = (product.brandProfile.channelSettings ?? {}) as Record<string, Record<string, unknown>>;
   const key = channelKey(channel);
   const next = { ...settings, [key]: { ...(settings[key] ?? {}), styleGuide: res.data, styleGuideUpdatedAt: new Date().toISOString(), styleGuideSource: `${refs.length}개 참고 글` } };

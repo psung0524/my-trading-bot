@@ -82,6 +82,7 @@ export function ChannelWorkbench(p: Props) {
     });
   }
 
+  const selfCheck = (p.body as { selfCheck?: { item: string; pass: boolean }[] }).selfCheck ?? [];
   return (
     <div className="space-y-6" {...hydratedAttr(hydrated)} data-workbench>
       <Card>
@@ -89,7 +90,19 @@ export function ChannelWorkbench(p: Props) {
           <CardTitle>검증 결과</CardTitle>
           <CardDescription>저장할 때마다 Content Master와의 숫자 일치, 금융 안전 검사, 금지 표현을 다시 검사합니다.</CardDescription>
         </CardHeader>
-        <CardContent><ValidationList issues={p.issues} emptyText="Content Master와 일치하며 안전 검사를 통과했습니다." /></CardContent>
+        <CardContent className="space-y-3">
+          <ValidationList issues={p.issues} emptyText="Content Master와 일치하며 안전 검사를 통과했습니다." />
+          {selfCheck.length > 0 && (
+            <div className="rounded-md border bg-muted/30 p-3 text-sm" data-self-check>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">AI 셀프 체크 (플랫폼 규칙)</div>
+              <ul className="space-y-0.5">
+                {selfCheck.map((c, i) => (
+                  <li key={i} className={c.pass ? "" : "text-destructive"}>{c.pass ? "O" : "X"} {c.item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       <Card>

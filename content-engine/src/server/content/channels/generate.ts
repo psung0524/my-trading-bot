@@ -1,6 +1,7 @@
 import type { ChannelType, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/server/db/prisma";
+import { formatForMobile } from "@/lib/blog-format";
 import { blogBodySchema, instagramBodySchema, shortsBodySchema, threadsBodySchema, type ContentMasterBody } from "@/lib/schemas/content";
 import { getAIProvider } from "@/server/providers/ai";
 import { resolvePrompt } from "../prompt-registry";
@@ -66,10 +67,10 @@ async function saveChannelContent(ctx: Ctx, channel: ChannelType, variant: strin
 export async function generateThreads(workspaceId: string, masterId: string, opts: ThreadsOptions = {}, userId?: string, replaceIds?: Partial<Record<string, string>>) {
   const ctx = await loadCtx(workspaceId, masterId, userId);
   const settings = (ctx.brand.channelSettings.threads ?? {}) as ThreadsOptions;
-  const options = { includeLink: opts.includeLink ?? settings.includeLink ?? true, ctaStrength: opts.ctaStrength ?? settings.ctaStrength ?? "low", lessAdLike: opts.lessAdLike ?? settings.lessAdLike ?? true };
+  const options = { includeLink: opts.includeLink ?? settings.includeLink ?? false, ctaStrength: opts.ctaStrength ?? settings.ctaStrength ?? "low", lessAdLike: opts.lessAdLike ?? settings.lessAdLike ?? true };
   const prompt = await resolvePrompt("threads.generate", workspaceId);
   const schema = z.object({ posts: z.array(threadsBodySchema).length(3) });
-  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema, schemaName: prompt.schemaName, context: { master: ctx.body, brand: ctx.brand, product: ctx.product, options } });
+  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema, schemaName: prompt.schemaName, context: { workspaceId, master: ctx.body, brand: ctx.brand, product: ctx.product, options } });
   const out = [];
   for (const post of res.data.posts) {
     const merged = { ...post, ...options };
@@ -84,7 +85,7 @@ export async function generateInstagram(workspaceId: string, masterId: string, o
   const settings = (ctx.brand.channelSettings.instagram ?? {}) as InstagramOptions;
   const options = { template: opts.template ?? settings.template ?? "number-focus", cardCount: opts.cardCount ?? settings.cardCount ?? 6 };
   const prompt = await resolvePrompt("instagram.generate", workspaceId);
-  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: instagramBodySchema, schemaName: prompt.schemaName, context: { master: ctx.body, brand: ctx.brand, product: ctx.product, template: options.template, cardCount: options.cardCount } });
+  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: instagramBodySchema, schemaName: prompt.schemaName, context: { workspaceId, master: ctx.body, brand: ctx.brand, product: ctx.product, template: options.template, cardCount: options.cardCount } });
   const body = { ...res.data, colors: ctx.brand.colors, cards: res.data.cards.map((c, i) => ({ ...c, id: c.id || `c${i + 1}` })) };
   const cc = await saveChannelContent(ctx, "INSTAGRAM", options.template, `${ctx.body.title} · 카드뉴스`, body, options, { promptVersion: prompt.version, provider: res.provider, model: res.model }, replaceId);
   await audit({ workspaceId, userId, action: "content.generate", entityType: "ChannelContent", entityId: cc.id, meta: { channel: "INSTAGRAM" } });
@@ -97,8 +98,8 @@ export async function generateBlog(workspaceId: string, masterId: string, userId
   const targetLength = opts.targetLength ?? settings.targetLength ?? 2500;
   const prompt = await resolvePrompt("blog.generate", workspaceId);
   const style = await loadStyleContext(workspaceId, "BLOG", ctx.brand.channelSettings);
-  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: blogBodySchema, schemaName: prompt.schemaName, context: { master: ctx.body, brand: ctx.brand, product: ctx.product, styleGuide: style.styleGuide, examples: style.examples, targetLength, lengthGuide: `전체 본문 ${targetLength}자 안팎(±20%). 섹션 ${targetLength >= 4000 ? "6~8" : targetLength >= 2500 ? "4~6" : "3~4"}개` }, maxTokens: targetLength >= 4000 ? 16000 : 8192 });
-  const body = { ...res.data, asOfDate: ctx.body.asOfDate, disclaimer: res.data.disclaimer || ctx.brand.financeDisclaimer, sources: res.data.sources.length ? res.data.sources : ctx.body.sources };
+  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: blogBodySchema, schemaName: prompt.schemaName, context: { workspaceId, master: ctx.body, brand: ctx.brand, product: ctx.product, styleGuide: style.styleGuide, examples: style.examples, targetLength, lengthGuide: `전체 본문 ${targetLength}자 안팎(±20%). 섹션 ${targetLength >= 4000 ? "6~8" : targetLength >= 2500 ? "4~6" : "3~4"}개` }, maxTokens: targetLength >= 4000 ? 16000 : 8192 });
+  const body = { ...res.data, sections: res.data.sections.map((s) => ({ ...s, markdown: formatForMobile(s.markdown) })), faq: res.data.faq.map((f) => ({ ...f, a: formatForMobile(f.a) })), asOfDate: ctx.body.asOfDate, disclaimer: res.data.disclaimer || ctx.brand.financeDisclaimer, sources: res.data.sources.length ? res.data.sources : ctx.body.sources };
   const cc = await saveChannelContent(ctx, "BLOG", "default", body.title, body, { targetLength }, { promptVersion: prompt.version, provider: res.provider, model: res.model }, replaceId);
   await audit({ workspaceId, userId, action: "content.generate", entityType: "ChannelContent", entityId: cc.id, meta: { channel: "BLOG" } });
   return cc;
@@ -109,7 +110,7 @@ export async function generateShorts(workspaceId: string, masterId: string, opts
   const settings = (ctx.brand.channelSettings.youtube ?? {}) as ShortsOptions;
   const durationSec = opts.durationSec ?? settings.durationSec ?? 45;
   const prompt = await resolvePrompt("shorts.generate", workspaceId);
-  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: shortsBodySchema, schemaName: prompt.schemaName, context: { master: ctx.body, brand: ctx.brand, product: ctx.product, durationSec } });
+  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: shortsBodySchema, schemaName: prompt.schemaName, context: { workspaceId, master: ctx.body, brand: ctx.brand, product: ctx.product, durationSec } });
   const cc = await saveChannelContent(ctx, "YOUTUBE_SHORTS", `${durationSec}s`, `${ctx.body.title} · Shorts`, { ...res.data, durationSec }, { durationSec }, { promptVersion: prompt.version, provider: res.provider, model: res.model }, replaceId);
   await audit({ workspaceId, userId, action: "content.generate", entityType: "ChannelContent", entityId: cc.id, meta: { channel: "YOUTUBE_SHORTS" } });
   return cc;

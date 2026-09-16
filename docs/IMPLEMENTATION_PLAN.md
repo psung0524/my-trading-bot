@@ -158,6 +158,10 @@ User ─< WorkspaceMember >─ Workspace ─< Product ─ BrandProfile ─< Bran
 | 워크스페이스 URL | `/w/[slug]/...` | 멀티테넌트 명시 |
 | 소셜 로그인 | env 존재 시에만 Provider 등록 | 키 없이도 빌드 |
 | 이메일 발송 | MVP 미구현(가입 즉시 활성) | 외부 SMTP 의존 제거 |
+| 채널 프롬프트 규칙 | `docs/CONTENT_RULES.md`(퍼널·톤·금지선·채널별 형식)를 `prompts/index.ts`에 반영, 결과마다 `selfCheck` O/X | 운영자가 정한 플랫폼 규칙을 코드로 고정 |
+| Threads 링크 | 기본 본문 미포함(`includeLink=false`), 링크는 `replyText`(답글용)에 | 스레드 규칙: 본문 링크 노출 금지, 댓글 유도 |
+| 블로그 문단 | 생성 직후 `formatForMobile`로 2~3문장(약 100자) 단위 문단 분리, 편집기에 "모바일 문단 정리" 버튼 | 모바일 가독성 |
+| AI 사용량 | `AiUsage` 테이블에 호출별 토큰·예상 비용 기록, 설정 화면에 30일 합계 표시(Mock 제외) | 실제 지출을 앱 안에서 확인 |
 
 ## 7. 완료 조건(§17) 검증 결과
 

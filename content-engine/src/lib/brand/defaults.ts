@@ -36,7 +36,7 @@ export const DEFAULT_CTAS = [
 ];
 
 export const DEFAULT_CHANNEL_SETTINGS = {
-  threads: { includeLink: true, ctaStrength: "low", lessAdLike: true },
+  threads: { includeLink: false, ctaStrength: "low", lessAdLike: true },
   instagram: { cardCount: 6, template: "magazine" },
   blog: { includeFaq: true, includeToc: true },
   youtube: { durationSec: 45 },

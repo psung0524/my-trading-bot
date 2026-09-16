@@ -54,7 +54,7 @@ export async function captureLearning(workspaceId: string, channelContentId: str
   const after = extractChannelTexts(channel, afterBody).map((t) => t.text).join("\n");
   if (before === after) return [];
   const prompt = await resolvePrompt("learning.analyze", workspaceId);
-  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: learningSchema, schemaName: prompt.schemaName, context: { before, after, channel } });
+  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: learningSchema, schemaName: prompt.schemaName, context: { workspaceId, before, after, channel } });
   const created = [];
   for (const p of res.data.patterns) {
     const dup = await prisma.brandLearning.findFirst({ where: { workspaceId, pattern: p.pattern, status: { not: "DELETED" } } });

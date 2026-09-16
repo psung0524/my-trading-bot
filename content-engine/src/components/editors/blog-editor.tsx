@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { BlogPreview } from "@/components/channels/blog-preview";
+import { formatForMobile } from "@/lib/blog-format";
 
 export function BlogEditor({ body, onChange }: { body: BlogBody; onChange: (b: BlogBody) => void }) {
   const [b, setB] = useState(body);
@@ -21,6 +22,7 @@ export function BlogEditor({ body, onChange }: { body: BlogBody; onChange: (b: B
       <div className="flex gap-2">
         <Button type="button" size="sm" variant={tab === "edit" ? "default" : "outline"} onClick={() => setTab("edit")}>편집</Button>
         <Button type="button" size="sm" variant={tab === "preview" ? "default" : "outline"} onClick={() => setTab("preview")}>미리보기</Button>
+        <Button type="button" size="sm" variant="ghost" className="ml-auto" title="긴 문단을 1~2문장 단위로 나눠 모바일에서 읽기 쉽게 정리합니다" onClick={() => update({ sections: b.sections.map((s) => ({ ...s, markdown: formatForMobile(s.markdown) })), faq: b.faq.map((f) => ({ ...f, a: formatForMobile(f.a) })) })}>모바일 문단 정리</Button>
       </div>
       {tab === "preview" ? (
         <BlogPreview body={b} />
@@ -40,6 +42,7 @@ export function BlogEditor({ body, onChange }: { body: BlogBody; onChange: (b: B
           <div className="grid gap-3 md:grid-cols-2">
             <div><Label htmlFor="b-intent">검색 의도</Label><Input id="b-intent" value={b.searchIntent} onChange={(e) => update({ searchIntent: e.target.value })} className="mt-1" /></div>
             <div><Label htmlFor="b-thumb">썸네일 문구</Label><Input id="b-thumb" value={b.thumbnailText} onChange={(e) => update({ thumbnailText: e.target.value })} className="mt-1" /></div>
+            <div><Label htmlFor="b-tags">태그 (쉼표로 구분, 10개 권장)</Label><Input id="b-tags" value={b.tags.join(", ")} onChange={(e) => update({ tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })} className="mt-1" placeholder="배당소득세, 배당주, 재테크, ..." /></div>
           </div>
           <div><Label htmlFor="b-meta">메타 설명 ({b.metaDescription.length}/200)</Label><Textarea id="b-meta" rows={2} value={b.metaDescription} onChange={(e) => update({ metaDescription: e.target.value })} className="mt-1" /></div>
           <div className="space-y-3">

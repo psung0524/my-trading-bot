@@ -28,7 +28,7 @@ export function MagazineCard({ card, index, total, colors, brandName, size, font
     );
   }
 
-  const Title = () => (
+  const title = (
     <div data-card-title style={{ fontSize: 60, fontWeight: 900, lineHeight: 1.35, letterSpacing: -1.5, maxWidth: W * 0.72 }}>
       {card.title.split("\n").map((line, i) => (
         <span key={i} style={{ display: "inline", background: `linear-gradient(transparent 52%, ${highlight} 52%)`, padding: "0 4px" }}>
@@ -38,13 +38,13 @@ export function MagazineCard({ card, index, total, colors, brandName, size, font
       ))}
     </div>
   );
-  const Logo = () => <div style={{ position: "absolute", top: pad - 8, right: pad, fontSize: 40, fontWeight: 900, color: colors.primary, letterSpacing: -1 }}>{brandName}</div>;
-  const SectionLabel = ({ text }: { text: string }) => (
+  const logo = <div style={{ position: "absolute", top: pad - 8, right: pad, fontSize: 40, fontWeight: 900, color: colors.primary, letterSpacing: -1 }}>{brandName}</div>;
+  const sectionLabel = card.sectionLabel ? (
     <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 32, fontWeight: 700, color: ink, marginTop: 44, marginBottom: 18 }}>
       <span style={{ display: "inline-block", width: 22, height: 22, borderTop: `3px solid ${ink}`, borderLeft: `3px solid ${ink}` }} />
-      {text}
+      {card.sectionLabel}
     </div>
-  );
+  ) : null;
   const panel: React.CSSProperties = { border: `2px solid #D1D5DB`, borderRadius: 22, background: "#fff", padding: "34px 40px", fontSize: 36, color: ink };
   const bottom: React.CSSProperties = { position: "absolute", left: 0, right: 0, bottom: 0, padding: `${pad * 0.8}px ${pad}px ${pad}px`, background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${highlight} 100%)` };
 
@@ -93,10 +93,10 @@ export function MagazineCard({ card, index, total, colors, brandName, size, font
   const showBottom = Boolean(card.heading || (card.type !== "text" && card.body) || (card.type === "text" && card.heading));
   return (
     <div style={{ ...base, padding: pad }} data-card-index={index}>
-      <Logo />
+      {logo}
       <div data-card-body style={{ paddingTop: 10 }}>
-        <Title />
-        {card.sectionLabel && <SectionLabel text={card.sectionLabel} />}
+        {title}
+        {sectionLabel}
         {!card.sectionLabel && panelBody && <div style={{ height: 40 }} />}
         {panelBody}
         {card.footnote && card.type !== "calculation" && <div style={{ fontSize: 24, color: muted, marginTop: 14 }}>*{card.footnote}</div>}

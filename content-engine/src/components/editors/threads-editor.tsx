@@ -22,6 +22,10 @@ export function ThreadsEditor({ body, brandName, onChange }: { body: ThreadsBody
           <Textarea id="threads-text" rows={12} value={b.text} onChange={(e) => update({ text: e.target.value })} className="mt-1 font-mono text-sm" />
           {b.text.length > 500 && <p className="text-xs text-destructive">500자를 넘었습니다</p>}
         </div>
+        <div>
+          <Label htmlFor="threads-reply">답글 문구 (게시 후 직접 남기는 답글 · 블로그 링크는 여기에)</Label>
+          <Textarea id="threads-reply" rows={3} value={b.replyText} onChange={(e) => update({ replyText: e.target.value })} className="mt-1 font-mono text-sm" placeholder="정리한 표는 여기서 볼 수 있습니다 → (링크)" />
+        </div>
         <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center gap-2"><Checkbox id="t-link" checked={b.includeLink} onCheckedChange={(v) => update({ includeLink: Boolean(v) })} /><Label htmlFor="t-link">링크 포함</Label></div>
           <div className="flex items-center gap-2"><Checkbox id="t-ad" checked={b.lessAdLike} onCheckedChange={(v) => update({ lessAdLike: Boolean(v) })} /><Label htmlFor="t-ad">광고 느낌 줄이기</Label></div>

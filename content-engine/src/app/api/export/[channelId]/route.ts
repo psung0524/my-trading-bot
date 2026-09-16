@@ -27,7 +27,7 @@ export async function GET(req: Request, ctx: RouteContext<"/api/export/[channelI
       return file(`${base}.html`, doc, "text/html; charset=utf-8");
     }
     if (format === "naver") {
-      const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(b.title)} - 복사용</title><style>body{max-width:760px;margin:40px auto;font-family:sans-serif;line-height:1.7;padding:0 16px}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:6px 10px}.note{background:#fffbe6;border:1px solid #f0d000;padding:12px;border-radius:8px;font-size:14px}</style></head><body><div class="note">네이버 블로그는 자동 게시하지 않습니다. 아래 본문을 전체 선택(Ctrl+A) → 복사(Ctrl+C)해서 붙여 넣고, 이미지는 콘텐츠 화면에서 내려받아 첨부하세요.</div><hr/>${html}</body></html>`;
+      const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(b.title)} - 복사용</title><style>body{max-width:680px;margin:40px auto;font-family:sans-serif;line-height:1.8;padding:0 16px;word-break:keep-all;overflow-wrap:anywhere}p{margin:0 0 1em}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:6px 10px}.note{background:#fffbe6;border:1px solid #f0d000;padding:12px;border-radius:8px;font-size:14px}</style></head><body><div class="note">네이버 블로그는 자동 게시하지 않습니다. 아래 본문을 전체 선택(Ctrl+A) → 복사(Ctrl+C)해서 붙여 넣고, 이미지는 콘텐츠 화면에서 내려받아 첨부하세요.</div><hr/>${html}</body></html>`;
       return file(`${base}.html`, doc, "text/html; charset=utf-8", true);
     }
     return file(`${base}.txt`, md, "text/plain; charset=utf-8");

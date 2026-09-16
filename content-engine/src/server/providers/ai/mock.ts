@@ -1,6 +1,9 @@
 import type { AIProvider, GenerateInput, GenerateOutput } from "./types";
 import type { BlogBody, ContentMasterBody, Fact, InstagramBody, ShortsBody, ThreadsBody, TopicCandidate } from "@/lib/schemas/content";
 
+/** Mock 결과에 붙는 셀프 체크 예시 */
+const MOCK_CHECK = [{ item: "매수·매도 권유 표현이 0개인가", pass: true }, { item: "숫자는 facts.display 그대로 인용했는가", pass: true }];
+
 type Brand = {
   brandName?: string;
   tone?: string;
@@ -181,11 +184,12 @@ function mockThreads(ctx: Record<string, unknown>): ThreadsBody[] {
   const m = masterOf(ctx);
   const facts = m.facts;
   const opts = (ctx.options as { includeLink?: boolean; ctaStrength?: "none" | "low" | "medium" | "high"; lessAdLike?: boolean }) ?? {};
-  const includeLink = opts.includeLink ?? true;
+  const includeLink = opts.includeLink ?? false;
   const ctaStrength = opts.ctaStrength ?? "low";
   const lessAdLike = opts.lessAdLike ?? true;
   const cta = ctaOf(ctx);
   const link = includeLink && cta.url ? `\n${cta.url}` : "";
+  const replyText = !includeLink && cta.url ? `정리한 계산표는 여기서 볼 수 있습니다 → ${cta.url}` : "";
   const ctaLine = ctaStrength === "none" ? "" : ctaStrength === "high" ? `\n${cta.label} 👉` : ctaStrength === "medium" ? `\n${cta.label}` : lessAdLike ? "\n(직접 계산해 보고 싶다면 아래 링크)" : `\n${cta.label}`;
   const dateLine = `\n(기준일 ${m.asOfDate}, 세금·환율 미반영)`;
 
@@ -197,19 +201,19 @@ function mockThreads(ctx: Record<string, unknown>): ThreadsBody[] {
       {
         variant: "INFO",
         text: `월 ${monthly} 배당을 받으려면 얼마가 필요할까요?\n\n연간으로는 ${annual}입니다.\n${lines.map((l) => `· 배당수익률 ${l.yieldText} → 약 ${l.principalText}`).join("\n")}${dateLine}${ctaLine}${link}`,
-        includeLink, ctaStrength, lessAdLike,
+        includeLink, ctaStrength, lessAdLike, replyText, selfCheck: MOCK_CHECK,
         factRefs: ["monthlyTarget", "annualTarget", ...lines.flatMap((l) => [l.yieldKey, l.principalKey])],
       },
       {
         variant: "OBSERVATION",
         text: `계산기를 만들다 보니 느낀 점.\n\n월 ${monthly}이라는 목표는 같아도 배당수익률이 ${lines[0]?.yieldText ?? ""}인지 ${lines[lines.length - 1]?.yieldText ?? ""}인지에 따라 필요한 돈이 ${lines[0]?.principalText ?? ""}에서 ${lines[lines.length - 1]?.principalText ?? ""}까지 달라집니다.\n\n숫자 하나보다 조건을 먼저 정하는 게 순서더라고요.${dateLine}${ctaLine}${link}`,
-        includeLink, ctaStrength, lessAdLike,
+        includeLink, ctaStrength, lessAdLike, replyText, selfCheck: MOCK_CHECK,
         factRefs: ["monthlyTarget", lines[0]?.yieldKey, lines[0]?.principalKey, lines[lines.length - 1]?.yieldKey, lines[lines.length - 1]?.principalKey].filter(Boolean) as string[],
       },
       {
         variant: "ENGAGEMENT",
         text: `여러분의 월 목표 배당금은 얼마인가요?\n\n월 ${monthly}이면 배당수익률 ${lines[1]?.yieldText ?? lines[0]?.yieldText ?? ""} 기준 약 ${lines[1]?.principalText ?? lines[0]?.principalText ?? ""}이 필요하다는 단순 계산이 나옵니다.\n\n목표 금액과 지금 생각하는 배당수익률을 댓글로 남겨 주세요.${dateLine}${ctaLine}${link}`,
-        includeLink, ctaStrength, lessAdLike,
+        includeLink, ctaStrength, lessAdLike, replyText, selfCheck: MOCK_CHECK,
         factRefs: ["monthlyTarget", lines[1]?.yieldKey ?? lines[0]?.yieldKey, lines[1]?.principalKey ?? lines[0]?.principalKey].filter(Boolean) as string[],
       },
     ];
@@ -217,9 +221,9 @@ function mockThreads(ctx: Record<string, unknown>): ThreadsBody[] {
 
   const msg = m.keyMessages[0] ?? m.title;
   return [
-    { variant: "INFO", text: `${m.title}\n\n${m.summary}\n\n핵심: ${msg}${dateLine}${ctaLine}${link}`, includeLink, ctaStrength, lessAdLike, factRefs: [] },
-    { variant: "OBSERVATION", text: `운영하면서 자주 받는 질문이 있습니다.\n\n"${msg}"\n\n답은 숫자 하나가 아니라 기준과 조건에 있더라고요. ${m.cautions[0] ? `(${m.cautions[0]})` : ""}${dateLine}${ctaLine}${link}`, includeLink, ctaStrength, lessAdLike, factRefs: [] },
-    { variant: "ENGAGEMENT", text: `${msg}\n\n여러분은 어떤 기준으로 판단하시나요? 댓글로 알려 주세요.${dateLine}${ctaLine}${link}`, includeLink, ctaStrength, lessAdLike, factRefs: [] },
+    { variant: "INFO", text: `${m.title}\n\n${m.summary}\n\n핵심: ${msg}${dateLine}${ctaLine}${link}`, includeLink, ctaStrength, lessAdLike, replyText, selfCheck: MOCK_CHECK, factRefs: [] },
+    { variant: "OBSERVATION", text: `운영하면서 자주 받는 질문이 있습니다.\n\n"${msg}"\n\n답은 숫자 하나가 아니라 기준과 조건에 있더라고요. ${m.cautions[0] ? `(${m.cautions[0]})` : ""}${dateLine}${ctaLine}${link}`, includeLink, ctaStrength, lessAdLike, replyText, selfCheck: MOCK_CHECK, factRefs: [] },
+    { variant: "ENGAGEMENT", text: `${msg}\n\n여러분은 어떤 기준으로 판단하시나요? 댓글로 알려 주세요.${dateLine}${ctaLine}${link}`, includeLink, ctaStrength, lessAdLike, replyText, selfCheck: MOCK_CHECK, factRefs: [] },
   ];
 }
 
@@ -258,6 +262,7 @@ function mockInstagram(ctx: Record<string, unknown>): InstagramBody {
     caption: `${m.title}\n\n${m.summary}\n\n기준일 ${m.asOfDate} · ${m.cautions.join(", ")}\n${brand.financeDisclaimer ?? ""}`.trim(),
     hashtags: ["#배당", "#배당투자", "#배당금계산", "#월배당", "#재테크"],
     altTexts: cards.map((c) => `${c.title.replace(/\n/g, " ")}${c.value ? ` - ${c.label} ${c.value}` : ""}${c.subtitle ? ` (${c.subtitle})` : ""}`.trim()),
+    selfCheck: MOCK_CHECK,
   };
 }
 
@@ -301,6 +306,8 @@ function mockBlog(ctx: Record<string, unknown>): BlogBody {
       ];
 
   return {
+    tags: calc ? ["배당금계산", "배당수익률", "월배당", "배당주", "재테크", "투자", "경제", "월배당만들기", "배당투자금", "노후준비"] : ["배당", "배당투자", "재테크", "투자", "경제", "주식", "월배당"],
+    selfCheck: MOCK_CHECK,
     searchIntent: calc ? `월 ${monthly} 배당 필요 투자금` : m.title,
     titleCandidates,
     title: titleCandidates[0],
@@ -372,6 +379,7 @@ function mockShorts(ctx: Record<string, unknown>): ShortsBody {
     hashtags: ["#배당", "#배당투자", "#월배당", "#shorts"],
     thumbnailText: calc ? `월 ${monthly}\n배당 받으려면?` : m.title,
     voice: "default",
+    selfCheck: MOCK_CHECK,
     factRefs: facts.map((f) => f.key),
   };
 }

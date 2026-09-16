@@ -17,7 +17,7 @@ test("성과 데이터 → 추천 생성(이유·지표) → 승인 시 후속 �
   await page.getByRole("button", { name: "선택", exact: true }).first().click();
   await page.getByRole("button", { name: "Content Master 생성" }).click();
   await page.waitForURL(`**${base}/content/*`);
-  for (const l of [/Instagram/, /블로그/, /YouTube/]) await page.getByLabel(l).uncheck();
+  for (const l of [/Instagram/, /^블로그/, /YouTube/]) await page.getByRole("checkbox", { name: l }).uncheck();
   await page.getByRole("button", { name: "선택한 채널 생성" }).click();
   await expect(page.getByText("채널 콘텐츠를 생성했습니다")).toBeVisible();
   await page.goto(`${base}/inbox`);
