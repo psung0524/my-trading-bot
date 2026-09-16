@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+const subscribe = () => () => {};
 
 /** 클라이언트 hydration 완료 여부. 폼에 data-hydrated 마커를 달아 E2E가 준비 상태를 기다릴 수 있게 한다. */
 export function useHydrated(): boolean {
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => setHydrated(true), []);
-  return hydrated;
+  return useSyncExternalStore(subscribe, () => true, () => false);
 }
 
 export function hydratedAttr(hydrated: boolean) {
