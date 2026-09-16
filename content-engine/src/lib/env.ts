@@ -16,7 +16,7 @@ const envSchema = z.object({
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4.1-mini"),
-  TTS_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
+  TTS_PROVIDER: z.enum(["mock", "edge", "openai"]).default("mock"),
   STORAGE_PROVIDER: z.enum(["local", "s3"]).default("local"),
   STORAGE_LOCAL_DIR: z.string().default("./storage"),
   S3_ENDPOINT: z.string().optional(),

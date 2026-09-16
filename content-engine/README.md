@@ -29,7 +29,7 @@ npm run dev                     # http://localhost:3000
 ```
 
 외부 API 키가 없어도 전체 흐름이 동작합니다. 기본값은 모두 Mock Provider입니다
-(`AI_PROVIDER=mock`, `TTS_PROVIDER=mock`, 채널은 "Mock 계정 연결", `PRODUCT_ANALYZER=auto`는 실패 시 예시 데이터).
+(`AI_PROVIDER=mock`, 채널은 "Mock 계정 연결", `PRODUCT_ANALYZER=auto`는 실패 시 예시 데이터). 음성은 `TTS_PROVIDER=edge`(무료, 키 불필요)가 기본 권장이며, 네트워크가 막힌 환경에서는 `mock`.
 
 Job 처리: 개발 기본값 `JOB_RUNNER=inline`은 요청 안에서 즉시 처리합니다. 운영에서는 `JOB_RUNNER=worker` + `npm run worker`.
 

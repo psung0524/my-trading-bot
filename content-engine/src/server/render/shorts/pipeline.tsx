@@ -69,7 +69,7 @@ export async function renderShorts(input: ShortsRenderInput): Promise<ShortsRend
   const scenes: (ShortsScene & { audioMs: number })[] = [];
   for (const s of body.scenes) {
     const text = s.narration.trim() || s.onScreenText.trim() || "…";
-    const r = await tts.synthesize(text, { voice: body.voice });
+    const r = await tts.synthesize(text, { voice: body.voice && body.voice !== "default" ? body.voice : process.env.EDGE_TTS_VOICE || "default" });
     let wav = r.audio;
     if (r.ext !== "wav") wav = await transcodeToWav(r.audio, r.ext);
     const ms = wavDurationMs(wav) || r.durationMs;
