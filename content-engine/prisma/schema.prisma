@@ -1,0 +1,811 @@
+// Content Engine - Prisma schema
+// 모든 모델은 createdAt/updatedAt을 가진다. 사용자 콘텐츠 계열은 deletedAt(soft delete).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum ChannelType {
+  THREADS
+  INSTAGRAM
+  BLOG
+  YOUTUBE_SHORTS
+}
+
+enum SourceType {
+  PRODUCT_DATA
+  MANUAL_INPUT
+  USER_QUESTION
+  TREND
+  FREQUENTLY_VIEWED
+  CALCULATION
+  FEATURE_UPDATE
+  EDUCATIONAL
+  COMMUNITY_QUESTION
+}
+
+enum ContentCategory {
+  INFORMATIONAL
+  DATA
+  ENGAGEMENT
+  BRANDING
+  PROMOTION
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ContentStatus {
+  IDEA
+  GENERATING
+  DRAFT
+  NEEDS_REVIEW
+  NEEDS_SOURCE
+  APPROVED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  REJECTED
+  ARCHIVED
+}
+
+enum TopicStatus {
+  CANDIDATE
+  SELECTED
+  IN_PROGRESS
+  DONE
+  DISMISSED
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+enum AssetKind {
+  CARD_PNG
+  CARD_ZIP
+  BLOG_THUMBNAIL
+  SCENE_PNG
+  TTS_AUDIO
+  SUBTITLE
+  VIDEO_MP4
+  VIDEO_THUMBNAIL
+  LOGO
+  OTHER
+}
+
+enum BrandRuleKind {
+  FORBIDDEN_PHRASE
+  PREFERRED_PHRASE
+  TONE
+  DISCLAIMER
+  CTA
+  CUSTOM
+}
+
+enum LearningStatus {
+  PENDING
+  ACCEPTED
+  DELETED
+}
+
+enum RecommendationStatus {
+  PENDING
+  ACCEPTED
+  DISMISSED
+}
+
+// ---------- Auth ----------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  accounts    Account[]
+  sessions    Session[]
+  memberships WorkspaceMember[]
+  approvals   Approval[]
+  auditLogs   AuditLog[]
+  versions    ContentVersion[]
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------- Tenancy ----------
+
+model Workspace {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String
+  /// 성과 점수 가중치 등 워크스페이스 설정
+  settings  Json      @default("{}")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  members         WorkspaceMember[]
+  products        Product[]
+  topics          ContentTopic[]
+  masters         ContentMaster[]
+  channelContents ChannelContent[]
+  channelAccounts ChannelAccount[]
+  campaigns       Campaign[]
+  approvals       Approval[]
+  publishJobs     PublishJob[]
+  renderJobs      RenderJob[]
+  trackingLinks   TrackingLink[]
+  events          AnalyticsEvent[]
+  performances    ContentPerformance[]
+  promptTemplates PromptTemplate[]
+  jobs            Job[]
+  auditLogs       AuditLog[]
+  assets          CreativeAsset[]
+  recommendations Recommendation[]
+  learnings       BrandLearning[]
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(EDITOR)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+// ---------- Product & Brand ----------
+
+model Product {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  url         String
+  description String    @default("")
+  /// 분석 결과: features, keywords, audience, pages 등
+  analysis    Json      @default("{}")
+  analyzedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brandProfile BrandProfile?
+  dataSources  DataSource[]
+  topics       ContentTopic[]
+  masters      ContentMaster[]
+  campaigns    Campaign[]
+
+  @@index([workspaceId])
+}
+
+model BrandProfile {
+  id                String   @id @default(cuid())
+  productId         String   @unique
+  brandName         String
+  tagline           String   @default("")
+  operatorIdentity  String   @default("")
+  targetAudience    String   @default("")
+  contentGoal       String   @default("")
+  tone              String   @default("")
+  preferredPhrases  String[] @default([])
+  forbiddenPhrases  String[] @default([])
+  /// [{label, url, strength}]
+  ctas              Json     @default("[]")
+  primaryColor      String   @default("#0F766E")
+  secondaryColor    String   @default("#F0FDFA")
+  accentColor       String   @default("#F59E0B")
+  fontFamily        String   @default("Pretendard")
+  logoAssetId       String?
+  financeDisclaimer String   @default("")
+  /// 채널별 설정 {threads:{...}, instagram:{...}, blog:{...}, youtube:{...}}
+  channelSettings   Json     @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  product Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rules   BrandRule[]
+}
+
+model BrandRule {
+  id             String        @id @default(cuid())
+  brandProfileId String
+  kind           BrandRuleKind
+  value          String
+  note           String        @default("")
+  enabled        Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  brandProfile BrandProfile @relation(fields: [brandProfileId], references: [id], onDelete: Cascade)
+
+  @@index([brandProfileId])
+}
+
+/// 사용자 수정에서 자동 추출된 학습 항목. 사용자가 확인/삭제 가능.
+model BrandLearning {
+  id               String         @id @default(cuid())
+  workspaceId      String
+  channelContentId String?
+  channel          ChannelType?
+  /// 예: "shorten_sentences", "remove_exclamation", "prefer_phrase"
+  pattern          String
+  description      String
+  evidence         Json           @default("{}")
+  status           LearningStatus @default(PENDING)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+}
+
+model DataSource {
+  id         String    @id @default(cuid())
+  productId  String
+  name       String
+  kind       String
+  url        String?
+  config     Json      @default("{}")
+  lastSyncAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+// ---------- Planning ----------
+
+model ContentTopic {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  productId         String
+  title             String
+  coreQuestion      String          @default("")
+  targetAudience    String          @default("")
+  purpose           String          @default("")
+  category          ContentCategory @default(INFORMATIONAL)
+  expectedChannels  ChannelType[]   @default([])
+  /// 근거 데이터(자유 JSON)
+  evidence          Json            @default("{}")
+  asOfDate          DateTime?
+  /// [{name,url,retrievedAt}]
+  sources           Json            @default("[]")
+  riskLevel         RiskLevel       @default(LOW)
+  cta               Json?
+  duplicateScore    Float           @default(0)
+  /// 과거 유사 콘텐츠 id 목록
+  similarContentIds String[]        @default([])
+  expectedTypes     String[]        @default([])
+  status            TopicStatus     @default(CANDIDATE)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  deletedAt         DateTime?
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sources_  ContentSource[]
+  masters   ContentMaster[]
+
+  @@index([workspaceId, status])
+  @@index([productId])
+}
+
+model ContentSource {
+  id        String     @id @default(cuid())
+  topicId   String
+  type      SourceType
+  /// 원본 입력(질문 텍스트, 계산 파라미터, 기능 업데이트 내용 등)
+  payload   Json       @default("{}")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  topic ContentTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId])
+}
+
+// ---------- Content Master ----------
+
+model ContentMaster {
+  id          String        @id @default(cuid())
+  workspaceId String
+  productId   String
+  topicId     String?
+  title       String
+  summary     String        @default("")
+  asOfDate    DateTime
+  /// [{key,label,value,unit,formula?,assumptions?,sourceRef?}]
+  facts       Json          @default("[]")
+  /// [{name,url,retrievedAt}]
+  sources     Json          @default("[]")
+  cautions    String[]      @default([])
+  cta         Json?
+  /// 검증 결과 스냅샷
+  validation  Json          @default("{}")
+  status      ContentStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product   Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  topic     ContentTopic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  channels  ChannelContent[]
+
+  @@index([workspaceId, status])
+}
+
+// ---------- Channel content ----------
+
+model ChannelAccount {
+  id              String      @id @default(cuid())
+  workspaceId     String
+  channel         ChannelType
+  provider        String
+  displayName     String
+  externalId      String?
+  /// AES-256-GCM 암호화된 토큰
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  tokenExpiresAt  DateTime?
+  scopes          String[]    @default([])
+  config          Json        @default("{}")
+  isMock          Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  publishJobs PublishJob[]
+
+  @@index([workspaceId, channel])
+}
+
+model ChannelContent {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  masterId       String
+  channel        ChannelType
+  /// 채널 내 변형 (예: threads: INFO / OBSERVATION / ENGAGEMENT)
+  variant        String        @default("default")
+  title          String        @default("")
+  /// 채널별 구조화 본문 (스키마는 src/lib/schemas/channels.ts)
+  body           Json          @default("{}")
+  status         ContentStatus @default(DRAFT)
+  currentVersion Int           @default(1)
+  scheduledAt    DateTime?
+  publishedAt    DateTime?
+  externalId     String?
+  externalUrl    String?
+  /// 검증 결과 스냅샷 (consistency + finance safety)
+  validation     Json          @default("{}")
+  options        Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  workspace     Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  master        ContentMaster        @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  versions      ContentVersion[]
+  assets        CreativeAsset[]
+  approvals     Approval[]
+  publishJobs   PublishJob[]
+  renderJobs    RenderJob[]
+  trackingLinks TrackingLink[]
+  campaignItems CampaignItem[]
+  performances  ContentPerformance[]
+
+  @@index([workspaceId, status])
+  @@index([masterId])
+}
+
+model ContentVersion {
+  id               String   @id @default(cuid())
+  channelContentId String
+  version          Int
+  body             Json
+  /// AI | USER | SYSTEM
+  source           String
+  editedById       String?
+  changeSummary    String   @default("")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  channelContent ChannelContent @relation(fields: [channelContentId], references: [id], onDelete: Cascade)
+  editedBy       User?          @relation(fields: [editedById], references: [id], onDelete: SetNull)
+
+  @@unique([channelContentId, version])
+}
+
+model CreativeAsset {
+  id               String    @id @default(cuid())
+  workspaceId      String
+  channelContentId String?
+  kind             AssetKind
+  storageKey       String
+  mimeType         String
+  sizeBytes        Int       @default(0)
+  width            Int?
+  height           Int?
+  durationMs       Int?
+  meta             Json      @default("{}")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channelContent ChannelContent? @relation(fields: [channelContentId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([channelContentId])
+}
+
+// ---------- Campaign ----------
+
+model Campaign {
+  id          String    @id @default(cuid())
+  workspaceId String
+  productId   String?
+  name        String
+  slug        String
+  goal        String    @default("")
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product   Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  items     CampaignItem[]
+  links     TrackingLink[]
+
+  @@unique([workspaceId, slug])
+}
+
+model CampaignItem {
+  id               String   @id @default(cuid())
+  campaignId       String
+  channelContentId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  campaign       Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  channelContent ChannelContent @relation(fields: [channelContentId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, channelContentId])
+}
+
+// ---------- Approval & Publishing ----------
+
+model Approval {
+  id               String           @id @default(cuid())
+  workspaceId      String
+  channelContentId String
+  userId           String
+  decision         ApprovalDecision
+  contentVersion   Int
+  channel          ChannelType
+  scheduledAt      DateTime?
+  note             String           @default("")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channelContent ChannelContent @relation(fields: [channelContentId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([channelContentId])
+}
+
+model PublishJob {
+  id               String      @id @default(cuid())
+  workspaceId      String
+  channelContentId String
+  channelAccountId String?
+  channel          ChannelType
+  status           JobStatus   @default(QUEUED)
+  idempotencyKey   String      @unique
+  scheduledFor     DateTime?
+  attempts         Int         @default(0)
+  externalId       String?
+  externalUrl      String?
+  lastError        String?
+  logs             Json        @default("[]")
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channelContent ChannelContent  @relation(fields: [channelContentId], references: [id], onDelete: Cascade)
+  channelAccount ChannelAccount? @relation(fields: [channelAccountId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status])
+  @@index([channelContentId])
+}
+
+model RenderJob {
+  id               String    @id @default(cuid())
+  workspaceId      String
+  channelContentId String
+  /// CARDNEWS | SHORTS | BLOG_THUMBNAIL
+  kind             String
+  status           JobStatus @default(QUEUED)
+  idempotencyKey   String    @unique
+  attempts         Int       @default(0)
+  progress         Int       @default(0)
+  step             String    @default("")
+  lastError        String?
+  logs             Json      @default("[]")
+  resultAssetIds   String[]  @default([])
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channelContent ChannelContent @relation(fields: [channelContentId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([channelContentId])
+}
+
+// ---------- Analytics ----------
+
+model TrackingLink {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  channelContentId String?
+  campaignId       String?
+  code             String   @unique
+  destinationUrl   String
+  utmSource        String
+  utmMedium        String
+  utmCampaign      String
+  utmContent       String
+  clickCount       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace      Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channelContent ChannelContent?  @relation(fields: [channelContentId], references: [id], onDelete: SetNull)
+  campaign       Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  events         AnalyticsEvent[]
+
+  @@index([workspaceId])
+}
+
+model AnalyticsEvent {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  productId        String?
+  campaignId       String?
+  channelContentId String?
+  trackingLinkId   String?
+  anonymousId      String
+  userId           String?
+  sessionId        String
+  eventName        String
+  properties       Json     @default("{}")
+  timestamp        DateTime
+  landingPage      String?
+  referrer         String?
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  utmContent       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  trackingLink TrackingLink? @relation(fields: [trackingLinkId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, eventName, timestamp])
+  @@index([workspaceId, channelContentId])
+  @@index([workspaceId, anonymousId])
+}
+
+model ContentPerformance {
+  id               String      @id @default(cuid())
+  workspaceId      String
+  channelContentId String
+  channel          ChannelType
+  date             DateTime
+  impressions      Int?
+  clicks           Int         @default(0)
+  landingVisits    Int         @default(0)
+  signups          Int         @default(0)
+  activations      Int         @default(0)
+  returnVisits     Int         @default(0)
+  paidConversions  Int         @default(0)
+  score            Float?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channelContent ChannelContent @relation(fields: [channelContentId], references: [id], onDelete: Cascade)
+
+  @@unique([channelContentId, date])
+  @@index([workspaceId, date])
+}
+
+model Recommendation {
+  id          String               @id @default(cuid())
+  workspaceId String
+  /// EXPAND_TOPIC | REDUCE_TYPE | GOOD_CTA | GOOD_CHANNEL | REUSE | STOP_CAMPAIGN | NEED_DATA
+  kind        String
+  title       String
+  reason      String
+  metrics     Json                 @default("{}")
+  payload     Json                 @default("{}")
+  status      RecommendationStatus @default(PENDING)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+}
+
+// ---------- Prompts ----------
+
+model PromptTemplate {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  key         String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions  PromptVersion[]
+
+  @@unique([workspaceId, key])
+}
+
+model PromptVersion {
+  id         String   @id @default(cuid())
+  templateId String
+  version    Int
+  system     String
+  user       String
+  schemaName String   @default("")
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  template PromptTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+}
+
+// ---------- Jobs & Audit ----------
+
+model Job {
+  id             String    @id @default(cuid())
+  workspaceId    String?
+  type           String
+  payload        Json      @default("{}")
+  status         JobStatus @default(QUEUED)
+  idempotencyKey String?   @unique
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  runAt          DateTime  @default(now())
+  lockedAt       DateTime?
+  lockedBy       String?
+  lastError      String?
+  result         Json?
+  logs           Json      @default("[]")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAt])
+  @@index([workspaceId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  meta        Json     @default("{}")
+  ip          String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+}
