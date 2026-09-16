@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/app/status-badge";
 import { Button } from "@/components/ui/button";
 import { CHANNEL_LABELS, THREADS_VARIANT_LABELS } from "@/lib/labels";
 import { ChannelWorkbench } from "./channel-workbench";
-import { aiStatus } from "@/server/providers/ai/status";
+import { aiStatus, ttsStatus } from "@/server/providers/ai/status";
 import { AiStatusBanner } from "@/components/app/ai-status-banner";
 
 export const metadata: Metadata = { title: "채널 콘텐츠" };
@@ -40,7 +40,7 @@ export default async function ChannelContentPage(props: PageProps<"/w/[slug]/con
           </>
         }
       />
-      <AiStatusBanner status={aiStatus()} />
+      <AiStatusBanner status={aiStatus()} tts={cc.channel === "YOUTUBE_SHORTS" ? ttsStatus() : undefined} />
       <ChannelWorkbench
         slug={slug}
         masterId={masterId}

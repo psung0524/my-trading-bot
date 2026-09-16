@@ -13,3 +13,11 @@ export function aiStatus(): { provider: "mock" | "anthropic" | "openai"; model: 
   }
   return { provider: "mock", model: "mock-v1", configured: false, reason: "AI_PROVIDER가 mock입니다. .env에 AI_PROVIDER=\"anthropic\"과 ANTHROPIC_API_KEY를 넣고 서버를 다시 시작하세요" };
 }
+
+/** 현재 TTS 설정 (UI 표시용) */
+export function ttsStatus(): { provider: "mock" | "edge" | "openai"; detail: string } {
+  const mode = process.env.TTS_PROVIDER ?? "mock";
+  if (mode === "edge") return { provider: "edge", detail: `Edge 무료 음성 · ${process.env.EDGE_TTS_VOICE || "default"}` };
+  if (mode === "openai") return process.env.OPENAI_API_KEY ? { provider: "openai", detail: "OpenAI TTS" } : { provider: "mock", detail: "TTS_PROVIDER=openai이지만 OPENAI_API_KEY가 없어 Mock(톤음)" };
+  return { provider: "mock", detail: "Mock(톤음). .env에 TTS_PROVIDER=\"edge\"를 넣고 서버를 다시 시작하세요" };
+}
