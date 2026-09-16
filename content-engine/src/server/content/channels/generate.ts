@@ -114,9 +114,21 @@ export async function generateShorts(workspaceId: string, masterId: string, opts
 
 export async function generateAllChannels(workspaceId: string, masterId: string, channels: ChannelType[], options: GenerateOptions = {}, userId?: string) {
   const results: Record<string, string[]> = {};
-  if (channels.includes("THREADS")) results.THREADS = (await generateThreads(workspaceId, masterId, options.threads, userId)).map((c) => c.id);
-  if (channels.includes("INSTAGRAM")) results.INSTAGRAM = [(await generateInstagram(workspaceId, masterId, options.instagram, userId)).id];
-  if (channels.includes("BLOG")) results.BLOG = [(await generateBlog(workspaceId, masterId, userId)).id];
-  if (channels.includes("YOUTUBE_SHORTS")) results.YOUTUBE_SHORTS = [(await generateShorts(workspaceId, masterId, options.shorts, userId)).id];
-  return results;
+  const errors: Record<string, string> = {};
+  const run = async (channel: ChannelType, fn: () => Promise<string[]>) => {
+    try {
+      results[channel] = await fn();
+    } catch (e) {
+      errors[channel] = e instanceof Error ? e.message : String(e);
+      console.error(`채널 생성 실패 ${channel}`, e);
+    }
+  };
+  if (channels.includes("THREADS")) await run("THREADS", async () => (await generateThreads(workspaceId, masterId, options.threads, userId)).map((c) => c.id));
+  if (channels.includes("INSTAGRAM")) await run("INSTAGRAM", async () => [(await generateInstagram(workspaceId, masterId, options.instagram, userId)).id]);
+  if (channels.includes("BLOG")) await run("BLOG", async () => [(await generateBlog(workspaceId, masterId, userId)).id]);
+  if (channels.includes("YOUTUBE_SHORTS")) await run("YOUTUBE_SHORTS", async () => [(await generateShorts(workspaceId, masterId, options.shorts, userId)).id]);
+  if (Object.keys(results).length === 0) {
+    throw new Error(Object.entries(errors).map(([c, m]) => `${c}: ${m}`).join(" / ") || "생성된 채널이 없습니다");
+  }
+  return { ...results, _errors: Object.entries(errors).map(([c, m]) => `${c}: ${m}`) };
 }

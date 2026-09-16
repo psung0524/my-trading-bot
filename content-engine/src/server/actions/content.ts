@@ -87,7 +87,7 @@ const generateSchema = z.object({
     .default({}),
 });
 
-export async function generateChannelsAction(slug: string, masterId: string, input: unknown): Promise<ActionResult<{ jobId: string }>> {
+export async function generateChannelsAction(slug: string, masterId: string, input: unknown): Promise<ActionResult<{ jobId: string; warnings: string[] }>> {
   const ctx = await requireWorkspaceMember(slug, "generateContent");
   const parsed = generateSchema.safeParse(input);
   if (!parsed.success) return fail("입력값을 확인하세요", zodFieldErrors(parsed.error));
@@ -103,6 +103,12 @@ export async function generateChannelsAction(slug: string, masterId: string, inp
   });
   const job = await prisma.job.findUnique({ where: { id: res.jobId } });
   if (job?.status === "FAILED") return fail(`생성 실패: ${job.lastError ?? "알 수 없는 오류"}`);
+  const warnings = ((job?.result as { _errors?: string[] } | null)?._errors ?? []).map(humanizeGenerateError);
   revalidatePath(`/w/${slug}/content/${masterId}`);
-  return ok({ jobId: res.jobId });
+  return ok({ jobId: res.jobId, warnings });
+}
+
+function humanizeGenerateError(msg: string): string {
+  if (/ReferencePost|does not exist|relation .* does not exist/i.test(msg)) return `${msg.split(":")[0]}: 데이터베이스가 최신이 아닙니다. 터미널에서 npm run db:migrate 를 실행한 뒤 다시 시도하세요`;
+  return msg;
 }

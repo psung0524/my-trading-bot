@@ -67,6 +67,7 @@ export function GeneratePanel({ slug, masterId, disabled, existing }: { slug: st
               });
               if (!res.ok) return void toast.error(res.error);
               toast.success("채널 콘텐츠를 생성했습니다");
+              for (const w of res.data.warnings) toast.error(`일부 채널 실패 - ${w}`, { duration: 15000 });
               router.refresh();
             })
           }
