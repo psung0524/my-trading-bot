@@ -23,6 +23,7 @@ docker compose up -d            # PostgreSQL 16
 npm install
 npm run db:migrate              # 마이그레이션 적용 + Prisma Client 생성
 npm run db:seed                 # (선택) demo@example.com / demo1234! → /w/demo
+npx playwright install chromium # 카드뉴스/썸네일/영상 렌더링용 브라우저 (한 번만)
 npm run fonts:download          # (선택) 카드뉴스/영상용 한글 폰트. 생략하면 첫 렌더 때 자동 다운로드
 npm run dev                     # http://localhost:3000
 ```

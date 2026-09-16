@@ -11,6 +11,12 @@ async function getBrowser(): Promise<Browser> {
   if (!g.renderBrowser) {
     g.renderBrowser = chromium
       .launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || undefined, args: ["--no-sandbox", "--disable-dev-shm-usage", "--font-render-hinting=none"] })
+      .catch((e: Error) => {
+        if (/Executable doesn't exist|executable/i.test(e.message)) {
+          throw new Error("렌더링용 브라우저(Chromium)가 설치되어 있지 않습니다. 터미널에서 `npx playwright install chromium`을 한 번 실행한 뒤 다시 시도하세요. (다른 경로의 Chrome을 쓰려면 CHROMIUM_PATH 환경변수를 설정)");
+        }
+        throw e;
+      })
       .then((b) => {
         b.on("disconnected", () => {
           g.renderBrowser = undefined;
