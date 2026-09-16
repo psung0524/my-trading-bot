@@ -81,7 +81,7 @@ export const threadsBodySchema = z.object({
 });
 export type ThreadsBody = z.infer<typeof threadsBodySchema>;
 
-export const cardTemplateSchema = z.enum(["number-focus", "comparison", "checklist", "steps", "schedule"]);
+export const cardTemplateSchema = z.enum(["number-focus", "comparison", "checklist", "steps", "schedule", "magazine"]);
 export type CardTemplate = z.infer<typeof cardTemplateSchema>;
 
 export const cardSchema = z.object({
@@ -96,6 +96,11 @@ export const cardSchema = z.object({
   /// 비교표/일정: [{label, value}]
   rows: z.array(z.object({ label: z.string(), value: z.string() })).default([]),
   factRefs: z.array(z.string()).default([]),
+  /// 잡지형(magazine) 템플릿용: 표지 태그, 패널 라벨(┌ 라벨), 하단 굵은 소제목, 각주
+  tag: z.string().default(""),
+  sectionLabel: z.string().default(""),
+  heading: z.string().default(""),
+  footnote: z.string().default(""),
 });
 export type Card = z.infer<typeof cardSchema>;
 

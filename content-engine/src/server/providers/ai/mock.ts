@@ -232,24 +232,23 @@ function mockInstagram(ctx: Record<string, unknown>): InstagramBody {
   const brand = brandOf(ctx);
   const cta = ctaOf(ctx);
   const cards: InstagramBody["cards"] = [];
+  const card = (c: Partial<InstagramBody["cards"][number]> & { type: InstagramBody["cards"][number]["type"] }): InstagramBody["cards"][number] => ({ id: `c${cards.length + 1}`, title: "", subtitle: "", body: "", label: "", value: "", items: [], rows: [], factRefs: [], tag: "", sectionLabel: "", heading: "", footnote: "", ...c });
 
   if (isDividendCalc(facts)) {
     const lines = scenarioLines(facts);
     const monthly = disp(fact(facts, "monthlyTarget"));
-    cards.push({ id: "c1", type: "cover", title: `월 ${monthly} 배당`, subtitle: "얼마가 필요할까?", body: "", label: "", value: "", items: [], rows: [], factRefs: ["monthlyTarget"] });
-    cards.push({ id: "c2", type: "calculation", title: "연간 목표 배당금", subtitle: "", body: "월 목표 × 12개월", label: "연간 목표", value: disp(fact(facts, "annualTarget")), items: [], rows: [], factRefs: ["annualTarget"] });
-    lines.forEach((l, i) => {
-      cards.push({ id: `c${3 + i}`, type: "calculation", title: `배당수익률 ${l.yieldText}이라면`, subtitle: "", body: "연간 목표 ÷ 배당수익률", label: "필요 투자금", value: `약 ${l.principalText}`, items: [], rows: [], factRefs: [l.yieldKey, l.principalKey] });
-    });
-    cards.push({ id: `c${3 + lines.length}`, type: "comparison", title: "한눈에 비교", subtitle: "", body: "", label: "", value: "", items: [], rows: lines.map((l) => ({ label: `배당수익률 ${l.yieldText}`, value: `약 ${l.principalText}` })), factRefs: lines.flatMap((l) => [l.yieldKey, l.principalKey]) });
-    cards.push({ id: `c${4 + lines.length}`, type: "checklist", title: "이 숫자를 볼 때 주의할 점", subtitle: "", body: "", label: "", value: "", items: m.cautions.slice(0, 4), rows: [], factRefs: [] });
-    cards.push({ id: `c${5 + lines.length}`, type: "cta", title: cta.label, subtitle: `기준일 ${m.asOfDate}`, body: "내 목표 금액으로 직접 계산해 보세요", label: "", value: "", items: [], rows: [], factRefs: [] });
+    const annual = disp(fact(facts, "annualTarget"));
+    cards.push(card({ type: "cover", title: `월 ${monthly} 배당\n얼마가 있어야 될까?`, subtitle: "배당수익률별 필요 투자금 계산", tag: "저장해 두고 계산할 때 보기", factRefs: ["monthlyTarget"] }));
+    cards.push(card({ type: "calculation", title: `월 ${monthly}을 받으려면\n1년에 얼마가 필요할까?`, sectionLabel: "연간 목표 배당금", label: "월 목표 × 12개월", value: annual, heading: "월 목표를 연 단위로 바꾸는 게 첫 단계", body: `배당은 종목마다 지급 시기가 달라서 월 단위로 맞추기 어렵습니다. 그래서 먼저 1년 치 목표인 ${annual}을 기준으로 잡습니다.`, factRefs: ["monthlyTarget", "annualTarget"] }));
+    cards.push(card({ type: "comparison", title: "배당수익률에 따라\n필요한 돈은 이렇게 달라집니다", sectionLabel: "배당수익률별 필요 투자금", rows: lines.map((l) => ({ label: `배당수익률 ${l.yieldText}`, value: `약 ${l.principalText}` })), footnote: "필요 투자금 = 연간 목표 ÷ 배당수익률, 세금·환율 미반영", heading: `${lines[0]?.yieldText ?? ""}과 ${lines[lines.length - 1]?.yieldText ?? ""}의 차이는 ${lines[0]?.principalText ?? ""} vs ${lines[lines.length - 1]?.principalText ?? ""}`, body: "같은 목표라도 배당수익률 가정 하나로 필요한 돈이 크게 달라집니다. 숫자 하나를 고르기 전에 어떤 조건을 가정하는지부터 정하는 게 순서입니다.", factRefs: lines.flatMap((l) => [l.yieldKey, l.principalKey]) }));
+    cards.push(card({ type: "checklist", title: "이 계산에서\n빠진 것들", sectionLabel: "숫자를 볼 때 같이 확인할 것", items: m.cautions.slice(0, 4), heading: "세전 기준 단순 계산입니다", body: "배당소득세를 반영하면 같은 목표에 더 많은 투자금이 필요하고, 해외 배당이면 환율까지 움직입니다. 내 조건으로 다시 계산해야 실제 숫자가 나옵니다.", factRefs: [] }));
+    cards.push(card({ type: "cta", title: cta.label, label: cta.label, body: `내 목표 금액과 배당수익률로 직접 계산해 보세요\n(기준일 ${m.asOfDate})`, factRefs: [] }));
   } else {
-    cards.push({ id: "c1", type: "cover", title: m.title, subtitle: m.keyMessages[0] ?? "", body: "", label: "", value: "", items: [], rows: [], factRefs: [] });
-    cards.push({ id: "c2", type: "text", title: "핵심 정리", subtitle: "", body: m.summary, label: "", value: "", items: [], rows: [], factRefs: [] });
-    cards.push({ id: "c3", type: "checklist", title: "확인할 것", subtitle: "", body: "", label: "", value: "", items: m.keyMessages.slice(0, 4), rows: [], factRefs: [] });
-    cards.push({ id: "c4", type: "checklist", title: "주의할 점", subtitle: "", body: "", label: "", value: "", items: m.cautions.slice(0, 4), rows: [], factRefs: [] });
-    cards.push({ id: "c5", type: "cta", title: cta.label, subtitle: `기준일 ${m.asOfDate}`, body: "", label: "", value: "", items: [], rows: [], factRefs: [] });
+    cards.push(card({ type: "cover", title: m.title, subtitle: m.keyMessages[0] ?? "", tag: "저장 필수" }));
+    cards.push(card({ type: "text", title: m.title, sectionLabel: "핵심 정리", body: m.summary, heading: m.keyMessages[0] ?? "" }));
+    cards.push(card({ type: "checklist", title: "확인할 것", sectionLabel: "체크리스트", items: m.keyMessages.slice(0, 4) }));
+    cards.push(card({ type: "checklist", title: "주의할 점", sectionLabel: "같이 볼 것", items: m.cautions.slice(0, 4) }));
+    cards.push(card({ type: "cta", title: cta.label, label: cta.label, body: `기준일 ${m.asOfDate}` }));
   }
 
   return {
@@ -258,7 +257,7 @@ function mockInstagram(ctx: Record<string, unknown>): InstagramBody {
     cards,
     caption: `${m.title}\n\n${m.summary}\n\n기준일 ${m.asOfDate} · ${m.cautions.join(", ")}\n${brand.financeDisclaimer ?? ""}`.trim(),
     hashtags: ["#배당", "#배당투자", "#배당금계산", "#월배당", "#재테크"],
-    altTexts: cards.map((c) => `${c.title}${c.value ? ` - ${c.label} ${c.value}` : ""}${c.subtitle ? ` (${c.subtitle})` : ""}`.trim()),
+    altTexts: cards.map((c) => `${c.title.replace(/\n/g, " ")}${c.value ? ` - ${c.label} ${c.value}` : ""}${c.subtitle ? ` (${c.subtitle})` : ""}`.trim()),
   };
 }
 

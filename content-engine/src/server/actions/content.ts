@@ -81,7 +81,7 @@ const generateSchema = z.object({
   options: z
     .object({
       threads: z.object({ includeLink: z.boolean().optional(), ctaStrength: z.enum(["none", "low", "medium", "high"]).optional(), lessAdLike: z.boolean().optional() }).optional(),
-      instagram: z.object({ template: z.enum(["number-focus", "comparison", "checklist", "steps", "schedule"]).optional(), cardCount: z.number().int().min(5).max(8).optional() }).optional(),
+      instagram: z.object({ template: z.enum(["magazine", "number-focus", "comparison", "checklist", "steps", "schedule"]).optional(), cardCount: z.number().int().min(5).max(8).optional() }).optional(),
       shorts: z.object({ durationSec: z.union([z.literal(30), z.literal(45), z.literal(60)]).optional() }).optional(),
     })
     .default({}),

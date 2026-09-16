@@ -24,7 +24,7 @@ export async function saveContentAction(slug: string, channelContentId: string, 
 
 const regenSchema = z.object({
   threads: z.object({ includeLink: z.boolean().optional(), ctaStrength: z.enum(["none", "low", "medium", "high"]).optional(), lessAdLike: z.boolean().optional() }).optional(),
-  instagram: z.object({ template: z.enum(["number-focus", "comparison", "checklist", "steps", "schedule"]).optional() }).optional(),
+  instagram: z.object({ template: z.enum(["magazine", "number-focus", "comparison", "checklist", "steps", "schedule"]).optional() }).optional(),
   shorts: z.object({ durationSec: z.union([z.literal(30), z.literal(45), z.literal(60)]).optional() }).optional(),
 });
 

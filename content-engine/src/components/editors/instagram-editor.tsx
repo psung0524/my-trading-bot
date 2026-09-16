@@ -37,7 +37,7 @@ export function InstagramEditor({ body, brandName, onChange }: { body: Instagram
   };
   const add = () => {
     if (b.cards.length >= 10) return;
-    const c: CardT = { id: `c${Date.now()}`, type: "text", title: "새 카드", subtitle: "", body: "", label: "", value: "", items: [], rows: [], factRefs: [] };
+    const c: CardT = { id: `c${Date.now()}`, type: "text", title: "새 카드", subtitle: "", body: "", label: "", value: "", items: [], rows: [], factRefs: [], tag: "", sectionLabel: "", heading: "", footnote: "" };
     update({ ...b, cards: [...b.cards.slice(0, sel + 1), c, ...b.cards.slice(sel + 1)] });
     setSel(sel + 1);
   };
@@ -50,7 +50,7 @@ export function InstagramEditor({ body, brandName, onChange }: { body: Instagram
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <Label htmlFor="ig-template">템플릿</Label>
         <select id="ig-template" className="h-8 rounded-md border bg-background px-2" value={b.template} onChange={(e) => update({ ...b, template: e.target.value as InstagramBody["template"] })}>
-          <option value="number-focus">숫자 강조형</option><option value="comparison">비교표형</option><option value="checklist">체크리스트형</option><option value="steps">단계 설명형</option><option value="schedule">일정형</option>
+          <option value="magazine">잡지형</option><option value="number-focus">숫자 강조형</option><option value="comparison">비교표형</option><option value="checklist">체크리스트형</option><option value="steps">단계 설명형</option><option value="schedule">일정형</option>
         </select>
         {(["primary", "secondary", "accent"] as const).map((k) => (
           <label key={k} className="flex items-center gap-1">
@@ -97,13 +97,26 @@ export function InstagramEditor({ body, brandName, onChange }: { body: Instagram
               <Label htmlFor="c-subtitle">부제</Label>
               <Input id="c-subtitle" value={card.subtitle} onChange={(e) => setCard(sel, { subtitle: e.target.value })} className="mt-1" />
             </div>
+            {b.template === "magazine" && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {card.type === "cover" ? (
+                  <div><Label htmlFor="c-tag">표지 태그(필)</Label><Input id="c-tag" value={card.tag} onChange={(e) => setCard(sel, { tag: e.target.value })} className="mt-1" placeholder="저장해 두고 보기" /></div>
+                ) : (
+                  <>
+                    <div><Label htmlFor="c-section">패널 라벨</Label><Input id="c-section" value={card.sectionLabel} onChange={(e) => setCard(sel, { sectionLabel: e.target.value })} className="mt-1" /></div>
+                    <div><Label htmlFor="c-heading">하단 소제목</Label><Input id="c-heading" value={card.heading} onChange={(e) => setCard(sel, { heading: e.target.value })} className="mt-1" /></div>
+                    <div className="md:col-span-2"><Label htmlFor="c-footnote">각주</Label><Input id="c-footnote" value={card.footnote} onChange={(e) => setCard(sel, { footnote: e.target.value })} className="mt-1" /></div>
+                  </>
+                )}
+              </div>
+            )}
             {(card.type === "calculation") && (
               <div className="grid gap-3 md:grid-cols-2">
                 <div><Label htmlFor="c-label">라벨</Label><Input id="c-label" value={card.label} onChange={(e) => setCard(sel, { label: e.target.value })} className="mt-1" /></div>
                 <div><Label htmlFor="c-value">강조 값</Label><Input id="c-value" value={card.value} onChange={(e) => setCard(sel, { value: e.target.value })} className="mt-1" /></div>
               </div>
             )}
-            {(card.type === "text" || card.type === "calculation" || card.type === "cta") && (
+            {(card.type === "text" || card.type === "calculation" || card.type === "cta" || (b.template === "magazine" && card.type !== "cover")) && (
               <div><Label htmlFor="c-body">본문</Label><Textarea id="c-body" rows={3} value={card.body} onChange={(e) => setCard(sel, { body: e.target.value })} className="mt-1" /></div>
             )}
             {(card.type === "checklist" || card.type === "step") && (

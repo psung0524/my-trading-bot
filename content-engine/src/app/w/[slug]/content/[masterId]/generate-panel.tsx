@@ -19,7 +19,7 @@ export function GeneratePanel({ slug, masterId, disabled, existing }: { slug: st
   const [includeLink, setIncludeLink] = useState(true);
   const [ctaStrength, setCtaStrength] = useState("low");
   const [lessAdLike, setLessAdLike] = useState(true);
-  const [template, setTemplate] = useState("number-focus");
+  const [template, setTemplate] = useState("magazine");
   const [durationSec, setDurationSec] = useState("45");
 
   return (
@@ -49,7 +49,7 @@ export function GeneratePanel({ slug, masterId, disabled, existing }: { slug: st
           </div>
           <p className="pt-1 font-medium">Instagram 템플릿</p>
           <select aria-label="카드뉴스 템플릿" className="h-8 rounded-md border bg-background px-2" value={template} onChange={(e) => setTemplate(e.target.value)}>
-            <option value="number-focus">숫자 강조형</option><option value="comparison">비교표형</option><option value="checklist">체크리스트형</option><option value="steps">단계 설명형</option><option value="schedule">일정형</option>
+            <option value="magazine">잡지형(하이라이트 제목·패널)</option><option value="number-focus">숫자 강조형</option><option value="comparison">비교표형</option><option value="checklist">체크리스트형</option><option value="steps">단계 설명형</option><option value="schedule">일정형</option>
           </select>
           <p className="pt-1 font-medium">Shorts 길이</p>
           <select aria-label="Shorts 길이" className="h-8 rounded-md border bg-background px-2" value={durationSec} onChange={(e) => setDurationSec(e.target.value)}>

@@ -1,4 +1,5 @@
 import type { Card, CardTemplate } from "@/lib/schemas/content";
+import { MagazineCard } from "./magazine-card";
 
 export type CardColors = { primary: string; secondary: string; accent: string };
 
@@ -16,6 +17,7 @@ export function CardFrame({ card, index, total, template, colors, brandName, siz
   size: { width: number; height: number };
   fontFamily?: string;
 }) {
+  if (template === "magazine") return <MagazineCard card={card} index={index} total={total} colors={colors} brandName={brandName} size={size} fontFamily={fontFamily} />;
   const isCover = card.type === "cover";
   const isCta = card.type === "cta";
   const bg = isCover || isCta ? colors.primary : colors.secondary;

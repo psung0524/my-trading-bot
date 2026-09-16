@@ -11,7 +11,7 @@ import { audit } from "@/server/security/audit";
 import { loadStyleContext } from "../references";
 
 export type ThreadsOptions = { includeLink?: boolean; ctaStrength?: "none" | "low" | "medium" | "high"; lessAdLike?: boolean };
-export type InstagramOptions = { template?: "number-focus" | "comparison" | "checklist" | "steps" | "schedule"; cardCount?: number };
+export type InstagramOptions = { template?: "magazine" | "number-focus" | "comparison" | "checklist" | "steps" | "schedule"; cardCount?: number };
 export type ShortsOptions = { durationSec?: 30 | 45 | 60 };
 export type GenerateOptions = { threads?: ThreadsOptions; instagram?: InstagramOptions; shorts?: ShortsOptions };
 
