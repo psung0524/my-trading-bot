@@ -218,6 +218,7 @@ model Workspace {
   assets          CreativeAsset[]
   recommendations Recommendation[]
   learnings       BrandLearning[]
+  referencePosts  ReferencePost[]
 }
 
 model WorkspaceMember {
@@ -808,4 +809,27 @@ model AuditLog {
   user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
+}
+
+// ---------- Reference posts (문체 학습용 참고 글) ----------
+
+model ReferencePost {
+  id          String      @id @default(cuid())
+  workspaceId String
+  productId   String?
+  channel     ChannelType
+  title       String      @default("")
+  url         String      @default("")
+  content     String
+  /// URL | PASTE
+  source      String      @default("PASTE")
+  /// 반응이 좋았던 글 등 메모
+  note        String      @default("")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, channel])
 }

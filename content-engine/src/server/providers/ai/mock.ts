@@ -41,6 +41,9 @@ export class MockAIProvider implements AIProvider {
       case "learning.analyze":
         data = mockLearning(ctx);
         break;
+      case "style.analyze":
+        data = mockStyle(ctx);
+        break;
       default:
         throw new Error(`Mock AI: 알 수 없는 promptKey ${input.promptKey}`);
     }
@@ -385,4 +388,26 @@ function mockLearning(ctx: Record<string, unknown>) {
   if ((before.match(/👉|🔥|✨/g)?.length ?? 0) > (after.match(/👉|🔥|✨/g)?.length ?? 0)) patterns.push({ pattern: "fewer_emojis", description: "이모지 사용을 줄임" });
   if (patterns.length === 0) patterns.push({ pattern: "wording", description: "표현을 다듬음 (구체 패턴 미확인)" });
   return { patterns };
+}
+
+// ---------- style ----------
+
+function mockStyle(ctx: Record<string, unknown>) {
+  const posts = (ctx.posts as { content: string }[] | undefined) ?? [];
+  const all = posts.map((p) => p.content).join("\n");
+  const sentences = all.split(/(?<=[.!?다요])\s+/).map((s) => s.trim()).filter((s) => s.length > 8 && s.length <= 60);
+  const avgLen = sentences.length ? Math.round(sentences.reduce((n, s) => n + s.length, 0) / sentences.length) : 0;
+  const casual = /요[.!?\s]|죠[.!?\s]|거든요/.test(all);
+  return {
+    voice: casual ? "독자에게 말을 거는 친근한 1인칭. 경험담을 섞어 설명한다" : "차분한 설명형 1인칭",
+    sentence: `평균 ${avgLen || 25}자 안팎의 짧은 문장. ${casual ? "'~요/~죠'체" : "'~다/~습니다'체"}`,
+    opening: "독자가 겪는 상황이나 질문으로 시작",
+    structure: "소제목 3~5개, 문단은 2~4문장, 핵심 숫자는 표나 목록",
+    closing: "다음 행동 한 가지를 제안하며 마무리",
+    formatting: "굵게 강조는 문단당 1회 이하, 이모지 거의 없음",
+    vocabulary: ["직접 계산해 보니", "생각보다", "정리하면", "예를 들어"],
+    avoid: ["교과서식 정의 나열", "투자는 신중하게 같은 상투적 마무리"],
+    sampleSentences: sentences.slice(0, 4),
+    summary: `${posts.length}개 글 기준 (Mock 분석). 실제 AI를 켜면 더 정확한 가이드가 나옵니다`,
+  };
 }

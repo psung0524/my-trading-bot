@@ -34,9 +34,22 @@ export const PROMPTS: Record<string, PromptDef> = {
     user: "Content Master로 Instagram 카드뉴스(cards 5~8장)를 만드세요. template 유형을 반영하고 cover → 핵심 카드 → 주의 → cta 순서로 구성하세요. 각 카드 title 20자 이내, body 60자 이내. caption, hashtags, altTexts도 작성하세요.",
   },
   "blog.generate": {
-    key: "blog.generate", version: 1, schemaName: "BlogPost",
-    system: COMMON_RULES,
-    user: "Content Master로 검색 의도에 맞는 블로그 글을 만드세요. titleCandidates 5개, title, metaDescription(120자 내), toc, sections(markdown, 표와 계산 예시 포함), faq 2~4개, sources, asOfDate, disclaimer, internalLinks, cta, thumbnailText를 작성하세요.",
+    key: "blog.generate", version: 2, schemaName: "BlogPost",
+    system: `${COMMON_RULES}
+
+블로그 글쓰기 원칙:
+- 운영자가 직접 겪고 계산해 본 사람의 1인칭 목소리로 씁니다. "~합니다"체로 시작해 설명하는 교과서 말투를 피하고, 실제 블로그처럼 독자에게 말을 겁니다.
+- 글 전체에 하나의 분명한 관점(예: "배당수익률 숫자보다 먼저 정할 것은 ○○이다")을 세우고 그 관점으로 밀고 갑니다. 양쪽을 다 나열하는 무난한 글을 쓰지 않습니다.
+- "투자는 신중하게", "개인 상황에 따라 다르다" 같은 당연한 말은 글 끝 면책 한 줄로만 두고 본문에서 반복하지 않습니다.
+- 첫 문단은 요약이 아니라 독자가 실제로 겪는 상황·질문·오해로 시작합니다. 제목을 다시 풀어쓰지 않습니다.
+- 숫자는 facts.display 그대로 쓰되, 숫자 뒤에 "그래서 무엇을 결정해야 하는지"를 반드시 붙입니다.
+- 참고 글(examples)이 주어지면 문장 길이, 도입 방식, 문단 구성, 말끝, 소제목 스타일을 따라 합니다. 문장을 베끼지 말고 리듬과 구성만 가져옵니다. styleGuide가 있으면 그 지침을 우선합니다.`,
+    user: "Content Master로 검색 의도에 맞는 블로그 글을 만드세요. titleCandidates 5개(궁금증을 유발하되 과장 없이), title, metaDescription(120자 내), toc, sections(markdown; 표·계산 예시 포함, 소제목은 질문형이나 결론형), faq 2~4개(실제로 검색될 법한 질문), sources, asOfDate, disclaimer, internalLinks, cta(자연스럽게 본문 끝에 한 번), thumbnailText를 작성하세요. 섹션은 4~6개, 각 섹션 3~6문단, 전체 1,500~2,500자.",
+  },
+  "style.analyze": {
+    key: "style.analyze", version: 1, schemaName: "StyleGuide",
+    system: "당신은 글의 문체를 분석하는 편집자입니다. 주어진 글들의 공통된 문체 특징만 추출합니다. 내용(주제·숫자)은 분석 대상이 아닙니다.",
+    user: "posts(참고 글)에서 공통 문체를 뽑아 styleGuide를 만드세요. voice(화자 태도와 말투), sentence(문장 길이·리듬·종결어미), opening(첫 문단을 여는 방식), structure(소제목·문단·목록·표 사용 패턴), closing(마무리 방식), formatting(굵게·이모지·줄바꿈 습관), vocabulary(자주 쓰는 표현 5~10개), avoid(이 글들이 쓰지 않는 표현·태도), sampleSentences(문체가 잘 드러나는 짧은 문장 3~5개, 각 60자 이내), summary(한 줄 요약). 한국어로 작성합니다.",
   },
   "shorts.generate": {
     key: "shorts.generate", version: 1, schemaName: "ShortsScript",

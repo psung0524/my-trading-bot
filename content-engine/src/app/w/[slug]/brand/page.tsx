@@ -58,7 +58,7 @@ export default async function BrandPage(props: PageProps<"/w/[slug]/brand">) {
       <PageHeader
         title="브랜드 프로필"
         description="말투, 금지 표현, CTA, 색상은 모든 채널 콘텐츠 생성에 사용됩니다."
-        actions={<ProductPicker products={products.map((p) => ({ id: p.id, name: p.name }))} selectedId={selected.id} />}
+        actions={<><Button asChild variant="outline" size="sm"><Link href={`/w/${slug}/brand/references?product=${selected.id}&channel=BLOG`}>참고 글·문체</Link></Button><ProductPicker products={products.map((p) => ({ id: p.id, name: p.name }))} selectedId={selected.id} /></>}
       />
       <BrandProfileForm slug={slug} productId={selected.id} defaults={defaults} productUrl={selected.url} />
       <LogoUpload slug={slug} productId={selected.id} currentUrl={logo ? getStorage().url(logo.storageKey) : null} />

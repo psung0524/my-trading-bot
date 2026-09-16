@@ -8,6 +8,7 @@ import { loadBrandContext, type BrandContext } from "../brand-context";
 import { masterToBody } from "../master";
 import { validateChannelBody } from "../validators";
 import { audit } from "@/server/security/audit";
+import { loadStyleContext } from "../references";
 
 export type ThreadsOptions = { includeLink?: boolean; ctaStrength?: "none" | "low" | "medium" | "high"; lessAdLike?: boolean };
 export type InstagramOptions = { template?: "number-focus" | "comparison" | "checklist" | "steps" | "schedule"; cardCount?: number };
@@ -92,7 +93,8 @@ export async function generateInstagram(workspaceId: string, masterId: string, o
 export async function generateBlog(workspaceId: string, masterId: string, userId?: string, replaceId?: string) {
   const ctx = await loadCtx(workspaceId, masterId, userId);
   const prompt = await resolvePrompt("blog.generate", workspaceId);
-  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: blogBodySchema, schemaName: prompt.schemaName, context: { master: ctx.body, brand: ctx.brand, product: ctx.product } });
+  const style = await loadStyleContext(workspaceId, "BLOG", ctx.brand.channelSettings);
+  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: blogBodySchema, schemaName: prompt.schemaName, context: { master: ctx.body, brand: ctx.brand, product: ctx.product, styleGuide: style.styleGuide, examples: style.examples }, maxTokens: 8192 });
   const body = { ...res.data, asOfDate: ctx.body.asOfDate, disclaimer: res.data.disclaimer || ctx.brand.financeDisclaimer, sources: res.data.sources.length ? res.data.sources : ctx.body.sources };
   const cc = await saveChannelContent(ctx, "BLOG", "default", body.title, body, {}, { promptVersion: prompt.version, provider: res.provider, model: res.model }, replaceId);
   await audit({ workspaceId, userId, action: "content.generate", entityType: "ChannelContent", entityId: cc.id, meta: { channel: "BLOG" } });
