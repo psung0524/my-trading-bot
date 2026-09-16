@@ -15,3 +15,8 @@ export function toDateInput(input: string | Date): string {
   const d = typeof input === "string" ? new Date(input) : input;
   return d.toISOString().slice(0, 10);
 }
+
+/** 렌더 중 Date.now() 직접 호출을 피하기 위한 헬퍼 */
+export function daysAgo(n: number, from: Date = new Date()): Date {
+  return new Date(from.getTime() - n * 86400_000);
+}
