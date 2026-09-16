@@ -3,6 +3,7 @@ import { registerJob } from "./registry";
 import { generateAllChannels, type GenerateOptions } from "@/server/content/channels/generate";
 import { prisma } from "@/server/db/prisma";
 import "./render-handlers";
+import "./publish-handlers";
 
 type GeneratePayload = { workspaceId: string; masterId: string; channels: ChannelType[]; options?: GenerateOptions; userId?: string };
 
