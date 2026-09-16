@@ -115,3 +115,19 @@
     font-family: var(--font-sans);
   }
 }
+
+/* 블로그 미리보기 기본 서식 (typography 플러그인 없이) */
+.blog-preview h1 { font-size: 1.75rem; font-weight: 800; margin: 0 0 1rem; line-height: 1.3; }
+.blog-preview h2 { font-size: 1.3rem; font-weight: 700; margin: 2rem 0 0.75rem; }
+.blog-preview h3 { font-size: 1.1rem; font-weight: 700; margin: 1.5rem 0 0.5rem; }
+.blog-preview p { margin: 0 0 1rem; line-height: 1.8; }
+.blog-preview ul, .blog-preview ol { margin: 0 0 1rem 1.25rem; line-height: 1.8; }
+.blog-preview ul { list-style: disc; }
+.blog-preview ol { list-style: decimal; }
+.blog-preview blockquote { border-left: 3px solid var(--primary); padding-left: 1rem; color: var(--muted-foreground); margin: 0 0 1rem; }
+.blog-preview table { border-collapse: collapse; margin: 0 0 1rem; width: 100%; font-size: 0.95em; }
+.blog-preview th, .blog-preview td { border: 1px solid var(--border); padding: 0.4rem 0.6rem; text-align: left; }
+.blog-preview th { background: var(--muted); }
+.blog-preview hr { border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+.blog-preview a { color: var(--primary); text-decoration: underline; }
+.blog-preview code { background: var(--muted); padding: 0.1rem 0.3rem; border-radius: 4px; font-size: 0.9em; }

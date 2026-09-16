@@ -13,6 +13,8 @@ import { CHANNEL_LABELS, THREADS_VARIANT_LABELS } from "@/lib/labels";
 import { MasterEditor } from "./master-editor";
 import { GeneratePanel } from "./generate-panel";
 import { ValidationList } from "@/components/app/validation-list";
+import { aiStatus } from "@/server/providers/ai/status";
+import { AiStatusBanner } from "@/components/app/ai-status-banner";
 
 export const metadata: Metadata = { title: "Content Master" };
 
@@ -50,6 +52,7 @@ export default async function MasterPage(props: PageProps<"/w/[slug]/content/[ma
         </div>
 
         <div className="space-y-6">
+          <AiStatusBanner status={aiStatus()} />
           <GeneratePanel slug={slug} masterId={master.id} disabled={!canGenerate} existing={[...channelsDone]} />
           <Card>
             <CardHeader>

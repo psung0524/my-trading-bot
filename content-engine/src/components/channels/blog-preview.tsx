@@ -3,7 +3,7 @@ import { renderMarkdown } from "@/lib/markdown";
 
 export function BlogPreview({ body }: { body: BlogBody }) {
   const html = renderMarkdown(blogToMarkdown(body));
-  return <article className="prose prose-sm max-w-none rounded-md border bg-card p-6" dangerouslySetInnerHTML={{ __html: html }} />;
+  return <article className="blog-preview max-w-none rounded-md border bg-card p-6 text-sm" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 export function blogToMarkdown(b: BlogBody): string {

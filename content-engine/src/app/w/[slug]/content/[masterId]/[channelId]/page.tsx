@@ -11,6 +11,8 @@ import { StatusBadge } from "@/components/app/status-badge";
 import { Button } from "@/components/ui/button";
 import { CHANNEL_LABELS, THREADS_VARIANT_LABELS } from "@/lib/labels";
 import { ChannelWorkbench } from "./channel-workbench";
+import { aiStatus } from "@/server/providers/ai/status";
+import { AiStatusBanner } from "@/components/app/ai-status-banner";
 
 export const metadata: Metadata = { title: "채널 콘텐츠" };
 
@@ -24,12 +26,13 @@ export default async function ChannelContentPage(props: PageProps<"/w/[slug]/con
   const body = channelBodySchemas[cc.channel].parse(cc.body);
   const storage = getStorage();
   const latest = cc.renderJobs[0];
+  const gen = (cc.validation ?? {}) as { provider?: string; model?: string };
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={`${CHANNEL_LABELS[cc.channel]}${cc.channel === "THREADS" ? ` · ${THREADS_VARIANT_LABELS[cc.variant] ?? cc.variant}` : ""}`}
-        description={`${cc.master.title} · v${cc.currentVersion} · 기준일 ${cc.master.asOfDate.toISOString().slice(0, 10)}`}
+        description={`${cc.master.title} · v${cc.currentVersion} · 기준일 ${cc.master.asOfDate.toISOString().slice(0, 10)} · 생성: ${gen.provider ?? "?"}${gen.model ? ` (${gen.model})` : ""}`}
         actions={
           <>
             <StatusBadge status={cc.status} />
@@ -37,6 +40,7 @@ export default async function ChannelContentPage(props: PageProps<"/w/[slug]/con
           </>
         }
       />
+      <AiStatusBanner status={aiStatus()} />
       <ChannelWorkbench
         slug={slug}
         masterId={masterId}
