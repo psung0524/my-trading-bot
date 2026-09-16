@@ -44,7 +44,7 @@ export const PROMPTS: Record<string, PromptDef> = {
 - 첫 문단은 요약이 아니라 독자가 실제로 겪는 상황·질문·오해로 시작합니다. 제목을 다시 풀어쓰지 않습니다.
 - 숫자는 facts.display 그대로 쓰되, 숫자 뒤에 "그래서 무엇을 결정해야 하는지"를 반드시 붙입니다.
 - 참고 글(examples)이 주어지면 문장 길이, 도입 방식, 문단 구성, 말끝, 소제목 스타일을 따라 합니다. 문장을 베끼지 말고 리듬과 구성만 가져옵니다. styleGuide가 있으면 그 지침을 우선합니다.`,
-    user: "Content Master로 검색 의도에 맞는 블로그 글을 만드세요. titleCandidates 5개(궁금증을 유발하되 과장 없이), title, metaDescription(120자 내), toc, sections(markdown; 표·계산 예시 포함, 소제목은 질문형이나 결론형), faq 2~4개(실제로 검색될 법한 질문), sources, asOfDate, disclaimer, internalLinks, cta(자연스럽게 본문 끝에 한 번), thumbnailText를 작성하세요. 섹션은 4~6개, 각 섹션 3~6문단, 전체 1,500~2,500자.",
+    user: "Content Master로 검색 의도에 맞는 블로그 글을 만드세요. titleCandidates 5개(궁금증을 유발하되 과장 없이), title, metaDescription(120자 내), toc, sections(markdown; 표·계산 예시 포함, 소제목은 질문형이나 결론형), faq 2~4개(실제로 검색될 법한 질문), sources, asOfDate, disclaimer, internalLinks, cta(자연스럽게 본문 끝에 한 번), thumbnailText를 작성하세요. 컨텍스트의 lengthGuide(목표 길이)를 반드시 지키세요. 각 섹션은 3~6문단으로 실제 사례·계산 과정·판단 기준을 구체적으로 풀어 씁니다.",
   },
   "style.analyze": {
     key: "style.analyze", version: 1, schemaName: "StyleGuide",

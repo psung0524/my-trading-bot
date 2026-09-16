@@ -13,7 +13,8 @@ import { loadStyleContext } from "../references";
 export type ThreadsOptions = { includeLink?: boolean; ctaStrength?: "none" | "low" | "medium" | "high"; lessAdLike?: boolean };
 export type InstagramOptions = { template?: "magazine" | "number-focus" | "comparison" | "checklist" | "steps" | "schedule"; cardCount?: number };
 export type ShortsOptions = { durationSec?: 30 | 45 | 60 };
-export type GenerateOptions = { threads?: ThreadsOptions; instagram?: InstagramOptions; shorts?: ShortsOptions };
+export type BlogOptions = { targetLength?: 1500 | 2500 | 4000 };
+export type GenerateOptions = { threads?: ThreadsOptions; instagram?: InstagramOptions; shorts?: ShortsOptions; blog?: BlogOptions };
 
 type Ctx = { workspaceId: string; master: { id: string; productId: string }; body: ContentMasterBody; brand: BrandContext; product: { name: string; url: string }; userId?: string };
 
@@ -90,13 +91,15 @@ export async function generateInstagram(workspaceId: string, masterId: string, o
   return cc;
 }
 
-export async function generateBlog(workspaceId: string, masterId: string, userId?: string, replaceId?: string) {
+export async function generateBlog(workspaceId: string, masterId: string, userId?: string, replaceId?: string, opts: BlogOptions = {}) {
   const ctx = await loadCtx(workspaceId, masterId, userId);
+  const settings = (ctx.brand.channelSettings.blog ?? {}) as BlogOptions;
+  const targetLength = opts.targetLength ?? settings.targetLength ?? 2500;
   const prompt = await resolvePrompt("blog.generate", workspaceId);
   const style = await loadStyleContext(workspaceId, "BLOG", ctx.brand.channelSettings);
-  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: blogBodySchema, schemaName: prompt.schemaName, context: { master: ctx.body, brand: ctx.brand, product: ctx.product, styleGuide: style.styleGuide, examples: style.examples }, maxTokens: 8192 });
+  const res = await getAIProvider().generateStructured({ promptKey: prompt.key, promptVersion: prompt.version, system: prompt.system, user: prompt.user, schema: blogBodySchema, schemaName: prompt.schemaName, context: { master: ctx.body, brand: ctx.brand, product: ctx.product, styleGuide: style.styleGuide, examples: style.examples, targetLength, lengthGuide: `전체 본문 ${targetLength}자 안팎(±20%). 섹션 ${targetLength >= 4000 ? "6~8" : targetLength >= 2500 ? "4~6" : "3~4"}개` }, maxTokens: targetLength >= 4000 ? 16000 : 8192 });
   const body = { ...res.data, asOfDate: ctx.body.asOfDate, disclaimer: res.data.disclaimer || ctx.brand.financeDisclaimer, sources: res.data.sources.length ? res.data.sources : ctx.body.sources };
-  const cc = await saveChannelContent(ctx, "BLOG", "default", body.title, body, {}, { promptVersion: prompt.version, provider: res.provider, model: res.model }, replaceId);
+  const cc = await saveChannelContent(ctx, "BLOG", "default", body.title, body, { targetLength }, { promptVersion: prompt.version, provider: res.provider, model: res.model }, replaceId);
   await audit({ workspaceId, userId, action: "content.generate", entityType: "ChannelContent", entityId: cc.id, meta: { channel: "BLOG" } });
   return cc;
 }
@@ -125,7 +128,7 @@ export async function generateAllChannels(workspaceId: string, masterId: string,
   };
   if (channels.includes("THREADS")) await run("THREADS", async () => (await generateThreads(workspaceId, masterId, options.threads, userId)).map((c) => c.id));
   if (channels.includes("INSTAGRAM")) await run("INSTAGRAM", async () => [(await generateInstagram(workspaceId, masterId, options.instagram, userId)).id]);
-  if (channels.includes("BLOG")) await run("BLOG", async () => [(await generateBlog(workspaceId, masterId, userId)).id]);
+  if (channels.includes("BLOG")) await run("BLOG", async () => [(await generateBlog(workspaceId, masterId, userId, undefined, options.blog)).id]);
   if (channels.includes("YOUTUBE_SHORTS")) await run("YOUTUBE_SHORTS", async () => [(await generateShorts(workspaceId, masterId, options.shorts, userId)).id]);
   if (Object.keys(results).length === 0) {
     throw new Error(Object.entries(errors).map(([c, m]) => `${c}: ${m}`).join(" / ") || "생성된 채널이 없습니다");

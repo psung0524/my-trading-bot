@@ -21,6 +21,7 @@ export function GeneratePanel({ slug, masterId, disabled, existing }: { slug: st
   const [lessAdLike, setLessAdLike] = useState(true);
   const [template, setTemplate] = useState("magazine");
   const [durationSec, setDurationSec] = useState("45");
+  const [blogLength, setBlogLength] = useState("2500");
 
   return (
     <Card>
@@ -51,6 +52,10 @@ export function GeneratePanel({ slug, masterId, disabled, existing }: { slug: st
           <select aria-label="카드뉴스 템플릿" className="h-8 rounded-md border bg-background px-2" value={template} onChange={(e) => setTemplate(e.target.value)}>
             <option value="magazine">잡지형(하이라이트 제목·패널)</option><option value="number-focus">숫자 강조형</option><option value="comparison">비교표형</option><option value="checklist">체크리스트형</option><option value="steps">단계 설명형</option><option value="schedule">일정형</option>
           </select>
+          <p className="pt-1 font-medium">블로그 길이</p>
+          <select aria-label="블로그 길이" className="h-8 rounded-md border bg-background px-2" value={blogLength} onChange={(e) => setBlogLength(e.target.value)}>
+            <option value="1500">약 1,500자</option><option value="2500">약 2,500자</option><option value="4000">약 4,000자</option>
+          </select>
           <p className="pt-1 font-medium">Shorts 길이</p>
           <select aria-label="Shorts 길이" className="h-8 rounded-md border bg-background px-2" value={durationSec} onChange={(e) => setDurationSec(e.target.value)}>
             <option value="30">30초</option><option value="45">45초</option><option value="60">60초</option>
@@ -63,7 +68,7 @@ export function GeneratePanel({ slug, masterId, disabled, existing }: { slug: st
             start(async () => {
               const res = await generateChannelsAction(slug, masterId, {
                 channels,
-                options: { threads: { includeLink, ctaStrength, lessAdLike }, instagram: { template }, shorts: { durationSec: Number(durationSec) } },
+                options: { threads: { includeLink, ctaStrength, lessAdLike }, instagram: { template }, shorts: { durationSec: Number(durationSec) }, blog: { targetLength: Number(blogLength) } },
               });
               if (!res.ok) return void toast.error(res.error);
               toast.success("채널 콘텐츠를 생성했습니다");

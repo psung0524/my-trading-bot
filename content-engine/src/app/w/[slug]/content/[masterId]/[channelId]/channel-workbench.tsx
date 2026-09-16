@@ -40,6 +40,7 @@ export function ChannelWorkbench(p: Props) {
   const hydrated = useHydrated();
   const [draft, setDraft] = useState<Props["body"]>(p.body);
   const [dirty, setDirty] = useState(false);
+  const [blogLength, setBlogLength] = useState("2500");
   const locked = p.status === "PUBLISHED" || p.status === "PUBLISHING";
   const renderable = p.channel !== "THREADS";
 
@@ -59,7 +60,7 @@ export function ChannelWorkbench(p: Props) {
   }
   function regenerate() {
     start(async () => {
-      const opts = p.channel === "THREADS" ? { threads: { includeLink: (draft as ThreadsBody).includeLink, ctaStrength: (draft as ThreadsBody).ctaStrength, lessAdLike: (draft as ThreadsBody).lessAdLike } } : p.channel === "INSTAGRAM" ? { instagram: { template: (draft as InstagramBody).template } } : p.channel === "YOUTUBE_SHORTS" ? { shorts: { durationSec: (draft as ShortsBody).durationSec } } : {};
+      const opts = p.channel === "THREADS" ? { threads: { includeLink: (draft as ThreadsBody).includeLink, ctaStrength: (draft as ThreadsBody).ctaStrength, lessAdLike: (draft as ThreadsBody).lessAdLike } } : p.channel === "INSTAGRAM" ? { instagram: { template: (draft as InstagramBody).template } } : p.channel === "YOUTUBE_SHORTS" ? { shorts: { durationSec: (draft as ShortsBody).durationSec } } : p.channel === "BLOG" ? { blog: { targetLength: Number(blogLength) } } : {};
       const res = await regenerateContentAction(p.slug, p.channelContentId, opts);
       if (!res.ok) return void toast.error(res.error);
       toast.success(`v${res.data.version}으로 재생성했습니다`);
@@ -106,6 +107,11 @@ export function ChannelWorkbench(p: Props) {
           {p.canEdit && !locked && (
             <div className="mt-4 flex flex-wrap gap-2">
               <Button onClick={save} disabled={pending || !dirty}>{pending ? "처리 중..." : "저장 (새 버전)"}</Button>
+              {p.channel === "BLOG" && (
+                <select aria-label="재생성 길이" className="h-9 rounded-md border bg-background px-2 text-sm" value={blogLength} onChange={(e) => setBlogLength(e.target.value)}>
+                  <option value="1500">약 1,500자</option><option value="2500">약 2,500자</option><option value="4000">약 4,000자</option>
+                </select>
+              )}
               <Button variant="outline" onClick={regenerate} disabled={pending}>{p.channel === "THREADS" ? "이 옵션으로 재생성" : "AI로 재생성"}</Button>
               {renderable && <Button variant="secondary" onClick={render} disabled={pending || p.masterNeedsSource}>{p.channel === "INSTAGRAM" ? "PNG 렌더링" : p.channel === "BLOG" ? "썸네일 생성" : "MP4 렌더링"}</Button>}
               <Button variant="ghost" onClick={() => start(async () => { const r = await archiveContentAction(p.slug, p.channelContentId); if (!r.ok) return void toast.error(r.error); toast.success("보관했습니다"); router.push(`/w/${p.slug}/content/${p.masterId}`); })} disabled={pending}>보관</Button>

@@ -83,6 +83,7 @@ const generateSchema = z.object({
       threads: z.object({ includeLink: z.boolean().optional(), ctaStrength: z.enum(["none", "low", "medium", "high"]).optional(), lessAdLike: z.boolean().optional() }).optional(),
       instagram: z.object({ template: z.enum(["magazine", "number-focus", "comparison", "checklist", "steps", "schedule"]).optional(), cardCount: z.number().int().min(5).max(8).optional() }).optional(),
       shorts: z.object({ durationSec: z.union([z.literal(30), z.literal(45), z.literal(60)]).optional() }).optional(),
+      blog: z.object({ targetLength: z.union([z.literal(1500), z.literal(2500), z.literal(4000)]).optional() }).optional(),
     })
     .default({}),
 });

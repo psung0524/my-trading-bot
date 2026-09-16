@@ -26,6 +26,7 @@ const regenSchema = z.object({
   threads: z.object({ includeLink: z.boolean().optional(), ctaStrength: z.enum(["none", "low", "medium", "high"]).optional(), lessAdLike: z.boolean().optional() }).optional(),
   instagram: z.object({ template: z.enum(["magazine", "number-focus", "comparison", "checklist", "steps", "schedule"]).optional() }).optional(),
   shorts: z.object({ durationSec: z.union([z.literal(30), z.literal(45), z.literal(60)]).optional() }).optional(),
+  blog: z.object({ targetLength: z.union([z.literal(1500), z.literal(2500), z.literal(4000)]).optional() }).optional(),
 });
 
 /** 채널 콘텐츠 하나만 재생성 (같은 레코드에 새 버전으로 저장) */
@@ -45,7 +46,7 @@ export async function regenerateContentAction(slug: string, channelContentId: st
       for (const r of res) if (r.id !== cc.id) await prisma.channelContent.delete({ where: { id: r.id } });
       version = res.find((r) => r.id === cc.id)?.currentVersion ?? version;
     } else if (cc.channel === "INSTAGRAM") version = (await generateInstagram(ctx.workspace.id, cc.masterId, opts.instagram, ctx.user.id, cc.id)).currentVersion;
-    else if (cc.channel === "BLOG") version = (await generateBlog(ctx.workspace.id, cc.masterId, ctx.user.id, cc.id)).currentVersion;
+    else if (cc.channel === "BLOG") version = (await generateBlog(ctx.workspace.id, cc.masterId, ctx.user.id, cc.id, opts.blog)).currentVersion;
     else if (cc.channel === "YOUTUBE_SHORTS") version = (await generateShorts(ctx.workspace.id, cc.masterId, opts.shorts, ctx.user.id, cc.id)).currentVersion;
     revalidatePath(`/w/${slug}/content/${cc.masterId}/${cc.id}`);
     return ok({ version });
