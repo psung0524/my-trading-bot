@@ -21,19 +21,39 @@ export function pcmToWav(pcm: Int16Array, sampleRate = SAMPLE_RATE): Buffer {
   return buf;
 }
 
+/** RIFF 청크를 순회해 fmt/data 위치를 찾는다 (ffmpeg가 넣는 LIST 청크 등 대응) */
+export function parseWav(wav: Buffer): { sampleRate: number; channels: number; bits: number; dataOffset: number; dataBytes: number } {
+  if (wav.length < 12 || wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") throw new Error("WAV 형식이 아닙니다");
+  let pos = 12;
+  let fmt: { sampleRate: number; channels: number; bits: number } | null = null;
+  while (pos + 8 <= wav.length) {
+    const id = wav.toString("ascii", pos, pos + 4);
+    const size = wav.readUInt32LE(pos + 4);
+    const body = pos + 8;
+    if (id === "fmt ") fmt = { channels: wav.readUInt16LE(body + 2), sampleRate: wav.readUInt32LE(body + 4), bits: wav.readUInt16LE(body + 14) };
+    if (id === "data") {
+      if (!fmt) throw new Error("WAV fmt 청크가 없습니다");
+      return { ...fmt, dataOffset: body, dataBytes: Math.min(size, wav.length - body) };
+    }
+    pos = body + size + (size % 2);
+  }
+  throw new Error("WAV data 청크가 없습니다");
+}
+
 export function wavDurationMs(wav: Buffer): number {
-  if (wav.length < 44 || wav.toString("ascii", 0, 4) !== "RIFF") return 0;
-  const sampleRate = wav.readUInt32LE(24);
-  const channels = wav.readUInt16LE(22);
-  const bits = wav.readUInt16LE(34);
-  const dataBytes = wav.readUInt32LE(40);
-  return Math.round((dataBytes / (sampleRate * channels * (bits / 8))) * 1000);
+  try {
+    const p = parseWav(wav);
+    return Math.round((p.dataBytes / (p.sampleRate * p.channels * (p.bits / 8))) * 1000);
+  } catch {
+    return 0;
+  }
 }
 
 export function wavPcm(wav: Buffer): Int16Array {
-  const dataBytes = wav.readUInt32LE(40);
-  const out = new Int16Array(dataBytes / 2);
-  for (let i = 0; i < out.length; i++) out[i] = wav.readInt16LE(44 + i * 2);
+  const p = parseWav(wav);
+  if (p.bits !== 16 || p.channels !== 1) throw new Error(`지원하지 않는 WAV (${p.bits}bit, ${p.channels}ch). 16bit mono 필요`);
+  const out = new Int16Array(Math.floor(p.dataBytes / 2));
+  for (let i = 0; i < out.length; i++) out[i] = wav.readInt16LE(p.dataOffset + i * 2);
   return out;
 }
 

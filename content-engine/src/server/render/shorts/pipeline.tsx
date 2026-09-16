@@ -159,7 +159,7 @@ async function transcodeToWav(audio: Buffer, ext: string): Promise<Buffer> {
     const inp = path.join(dir, `in.${ext}`);
     const out = path.join(dir, "out.wav");
     await writeFile(inp, audio);
-    await runFfmpeg(["-i", inp, "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", out]);
+    await runFfmpeg(["-i", inp, "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", "-map_metadata", "-1", "-fflags", "+bitexact", out]);
     return readFile(out);
   });
 }
