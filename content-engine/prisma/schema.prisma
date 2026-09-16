@@ -844,6 +844,10 @@ model AiUsage {
   model        String
   inputTokens  Int      @default(0)
   outputTokens Int      @default(0)
+  /// 프롬프트 캐시 읽기/쓰기 토큰, 배치 API 여부
+  cacheReadTokens  Int     @default(0)
+  cacheWriteTokens Int     @default(0)
+  batch            Boolean @default(false)
   /// 예상 비용(USD). 공식 단가표 기준 추정치
   estimatedUsd Float    @default(0)
   createdAt    DateTime @default(now())

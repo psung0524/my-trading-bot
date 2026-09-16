@@ -22,6 +22,8 @@ test("계산 소재 → Content Master → 4채널 생성 → 미리보기", asy
   await expect(page.getByText("1억 5,000만 원").first()).toBeVisible();
   await expect(page.getByText("2억 원").first()).toBeVisible();
 
+  await page.getByRole("checkbox", { name: /YouTube/ }).check();
+  await page.getByLabel("글 수").selectOption("3");
   await page.getByRole("button", { name: "선택한 채널 생성" }).click();
   await expect(page.getByText("채널 콘텐츠를 생성했습니다")).toBeVisible();
   await expect(page.getByText("Threads · 정보형")).toBeVisible();

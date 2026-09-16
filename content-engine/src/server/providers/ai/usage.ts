@@ -13,17 +13,22 @@ const PRICES: Record<string, [number, number]> = {
   "gpt-5.1": [1.25, 10],
 };
 
-export function estimateUsd(model: string, inputTokens: number, outputTokens: number): number {
+/** 캐시 읽기 0.1배, 캐시 쓰기 1.25배(5분 TTL), 배치 0.5배 (Anthropic 공식 단가 규칙) */
+export function estimateUsd(model: string, inputTokens: number, outputTokens: number, extra: { cacheReadTokens?: number; cacheWriteTokens?: number; batch?: boolean } = {}): number {
   const key = Object.keys(PRICES).find((k) => model.startsWith(k));
   if (!key) return 0;
   const [i, o] = PRICES[key];
-  return (inputTokens * i + outputTokens * o) / 1_000_000;
+  const usd = (inputTokens * i + (extra.cacheReadTokens ?? 0) * i * 0.1 + (extra.cacheWriteTokens ?? 0) * i * 1.25 + outputTokens * o) / 1_000_000;
+  return extra.batch ? usd * 0.5 : usd;
 }
 
-export async function recordAiUsage(input: { workspaceId?: string | null; promptKey: string; provider: string; model: string; inputTokens: number; outputTokens: number }) {
+export async function recordAiUsage(input: { workspaceId?: string | null; promptKey: string; provider: string; model: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; batch?: boolean }) {
   if (input.provider === "mock") return;
   try {
-    await prisma.aiUsage.create({ data: { ...input, workspaceId: input.workspaceId ?? null, estimatedUsd: estimateUsd(input.model, input.inputTokens, input.outputTokens) } });
+    const cacheReadTokens = input.cacheReadTokens ?? 0;
+    const cacheWriteTokens = input.cacheWriteTokens ?? 0;
+    const batch = input.batch ?? false;
+    await prisma.aiUsage.create({ data: { workspaceId: input.workspaceId ?? null, promptKey: input.promptKey, provider: input.provider, model: input.model, inputTokens: input.inputTokens, outputTokens: input.outputTokens, cacheReadTokens, cacheWriteTokens, batch, estimatedUsd: estimateUsd(input.model, input.inputTokens, input.outputTokens, { cacheReadTokens, cacheWriteTokens, batch }) } });
   } catch (e) {
     console.warn("AI 사용량 기록 실패", e);
   }
@@ -32,7 +37,7 @@ export async function recordAiUsage(input: { workspaceId?: string | null; prompt
 export async function usageSummary(workspaceId: string, days = 30) {
   const since = new Date(Date.now() - days * 86400_000);
   const rows = await prisma.aiUsage.findMany({ where: { workspaceId, createdAt: { gte: since } }, orderBy: { createdAt: "desc" } });
-  const total = rows.reduce((a, r) => ({ calls: a.calls + 1, input: a.input + r.inputTokens, output: a.output + r.outputTokens, usd: a.usd + r.estimatedUsd }), { calls: 0, input: 0, output: 0, usd: 0 });
+  const total = rows.reduce((a, r) => ({ calls: a.calls + 1, input: a.input + r.inputTokens, output: a.output + r.outputTokens, usd: a.usd + r.estimatedUsd, cacheRead: a.cacheRead + r.cacheReadTokens, cacheWrite: a.cacheWrite + r.cacheWriteTokens, batchCalls: a.batchCalls + (r.batch ? 1 : 0) }), { calls: 0, input: 0, output: 0, usd: 0, cacheRead: 0, cacheWrite: 0, batchCalls: 0 });
   const byKey = new Map<string, { calls: number; input: number; output: number; usd: number }>();
   for (const r of rows) {
     const g = byKey.get(r.promptKey) ?? { calls: 0, input: 0, output: 0, usd: 0 };

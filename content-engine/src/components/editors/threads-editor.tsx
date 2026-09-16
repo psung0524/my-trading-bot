@@ -17,6 +17,7 @@ export function ThreadsEditor({ body, brandName, onChange }: { body: ThreadsBody
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="space-y-3">
+        {b.angle && <p className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">훅 각도: {b.angle}</p>}
         <div>
           <Label htmlFor="threads-text">본문 ({b.text.length}/500)</Label>
           <Textarea id="threads-text" rows={12} value={b.text} onChange={(e) => update({ text: e.target.value })} className="mt-1 font-mono text-sm" />

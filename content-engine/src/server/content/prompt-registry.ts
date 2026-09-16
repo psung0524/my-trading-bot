@@ -10,7 +10,7 @@ export async function resolvePrompt(key: string, workspaceId?: string) {
       include: { versions: { where: { isActive: true }, orderBy: { version: "desc" }, take: 1 } },
     });
     const v = override?.versions[0];
-    if (v) return { key, version: v.version, system: v.system, user: v.user, schemaName: def.schemaName, source: "workspace" as const };
+    if (v) return { key, version: v.version, system: v.system, user: v.user, schemaName: def.schemaName, shared: undefined as string | undefined, source: "workspace" as const };
   }
   await prisma.promptTemplate.upsert({
     where: { workspaceId_key: { workspaceId: null as unknown as string, key } },

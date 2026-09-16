@@ -16,9 +16,11 @@ function withUsage(inner: AIProvider): AIProvider {
     async generateStructured<T>(input: GenerateInput<T>): Promise<GenerateOutput<T>> {
       const out = await inner.generateStructured(input);
       const wsId = (input as GenerateInput<T> & { workspaceId?: string }).workspaceId ?? (typeof input.context.workspaceId === "string" ? input.context.workspaceId : null);
-      await recordAiUsage({ workspaceId: wsId, promptKey: input.promptKey, provider: out.provider, model: out.model, inputTokens: out.usage?.inputTokens ?? 0, outputTokens: out.usage?.outputTokens ?? 0 });
+      await recordAiUsage({ workspaceId: wsId, promptKey: input.promptKey, provider: out.provider, model: out.model, inputTokens: out.usage?.inputTokens ?? 0, outputTokens: out.usage?.outputTokens ?? 0, cacheReadTokens: out.usage?.cacheReadTokens, cacheWriteTokens: out.usage?.cacheWriteTokens, batch: out.usage?.batch });
       return out;
     },
+    submitBatch: inner.submitBatch ? (reqs) => inner.submitBatch!(reqs) : undefined,
+    fetchBatch: inner.fetchBatch ? (id) => inner.fetchBatch!(id) : undefined,
   };
 }
 

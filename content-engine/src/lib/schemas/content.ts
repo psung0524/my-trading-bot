@@ -78,6 +78,8 @@ export const threadsBodySchema = z.object({
   text: z.string().min(1).max(500),
   /// 게시 후 직접 남길 답글(블로그 링크·자료 안내). 본문에는 링크를 넣지 않는 운영 규칙용
   replyText: z.string().default(""),
+  /// 고른 훅 각도와 이유 한 줄
+  angle: z.string().default(""),
   selfCheck: selfCheckSchema,
   includeLink: z.boolean().default(true),
   ctaStrength: z.enum(["none", "low", "medium", "high"]).default("low"),

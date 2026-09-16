@@ -15,6 +15,8 @@ import { GeneratePanel } from "./generate-panel";
 import { ValidationList } from "@/components/app/validation-list";
 import { aiStatus } from "@/server/providers/ai/status";
 import { AiStatusBanner } from "@/components/app/ai-status-banner";
+import { BatchStatus, type PendingBatch } from "./batch-status";
+import { prisma } from "@/server/db/prisma";
 
 export const metadata: Metadata = { title: "Content Master" };
 
@@ -28,6 +30,13 @@ export default async function MasterPage(props: PageProps<"/w/[slug]/content/[ma
   const issues = validation.success ? validation.data.issues : [];
   const canGenerate = master.status !== "NEEDS_SOURCE" && master.status !== "GENERATING";
   const channelsDone = new Set(master.channels.map((c) => c.channel));
+  const collectJobs = await prisma.job.findMany({ where: { workspaceId: ctx.workspace.id, type: "content.generate.collect", status: { in: ["QUEUED", "PROCESSING"] } }, orderBy: { createdAt: "desc" }, take: 10 });
+  const pendingBatches: PendingBatch[] = collectJobs
+    .filter((j) => (j.payload as { masterId?: string }).masterId === master.id)
+    .map((j) => {
+      const pl = j.payload as { batchId: string; channels: string[]; polls?: number };
+      return { jobId: j.id, batchId: pl.batchId, channels: pl.channels, status: j.status, runAt: j.runAt.toISOString(), polls: pl.polls ?? 0 };
+    });
 
   return (
     <div className="space-y-6">
@@ -53,6 +62,7 @@ export default async function MasterPage(props: PageProps<"/w/[slug]/content/[ma
 
         <div className="space-y-6">
           <AiStatusBanner status={aiStatus()} />
+          <BatchStatus slug={slug} batches={pendingBatches} />
           <GeneratePanel slug={slug} masterId={master.id} disabled={!canGenerate} existing={[...channelsDone]} />
           <Card>
             <CardHeader>

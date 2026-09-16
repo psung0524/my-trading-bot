@@ -2,7 +2,8 @@
  * 프롬프트 버전 관리. 키별로 version을 올리고, 사용 시 PromptTemplate/PromptVersion에 기록한다.
  * 규칙: 새 숫자를 만들지 말 것, facts.display를 그대로 인용할 것, 기준일과 조건을 표기할 것.
  */
-export type PromptDef = { key: string; version: number; system: string; user: string; schemaName: string };
+/** shared: 여러 호출이 공유하는 공통 규칙(프롬프트 캐시 접두사). system: 채널별 지시 */
+export type PromptDef = { key: string; version: number; system: string; user: string; schemaName: string; shared?: string };
 
 const COMMON_RULES = `당신은 투자 정보 콘텐츠 편집자입니다. 원본(Content Master)의 사실·숫자·논리를 바꾸지 않고 플랫폼 문법에 맞게 재구성합니다. 반드시 지킬 규칙:
 
@@ -47,23 +48,30 @@ export const PROMPTS: Record<string, PromptDef> = {
     user: "소재(topic)로부터 모든 채널이 공유할 Content Master를 만드세요. 컨텍스트에 facts가 주어지면 그대로 유지하고 추가 숫자를 만들지 마세요. facts가 없고 수치가 필요하면 needsSource=true인 fact를 추가하세요. title, summary, asOfDate, facts, sources, cautions, cta, keyMessages(3~5개)를 작성하세요.",
   },
   "threads.generate": {
-    key: "threads.generate", version: 2, schemaName: "ThreadsPosts",
-    system: `${COMMON_RULES}
-
-[스레드(Threads) 규칙]
-역할: 스레드는 대화를 여는 곳입니다. 정보 전달이 아니라 "댓글 달고 싶게" 만드는 게 목표입니다. 원본에서 가장 논쟁적이거나 의외인 1개 포인트만 뽑고 나머지는 버립니다.
+    key: "threads.generate", version: 3, schemaName: "ThreadsPosts",
+    shared: COMMON_RULES,
+    system: `[스레드(Threads) 규칙]
+역할: 스레드는 대화를 여는 곳입니다. 정보 전달이 아니라 "댓글 달고 싶게" 만드는 게 목표입니다. 원본에서 가장 논쟁적이거나 의외인 포인트 1개만 뽑고 나머지는 버립니다.
 형식: 본문 500자 이내. 첫 3줄(약 90자)이 승부처이므로 더보기 없이 보이는 구간에 훅과 반전을 다 넣습니다. 한 줄 1문장, 문장 사이 빈 줄. 해시태그를 쓰지 않습니다. 링크는 본문에 넣지 않고(options.includeLink가 true일 때만 예외) replyText(게시 후 남길 답글)에 블로그 링크와 자료 안내를 넣습니다.
-글 구조(4줄 공식): ① 훅 1줄(손해·격차·반전, 종목명 없이) ② 근거 1~2줄(숫자 하나로 훅 증명) ③ 미완의 결론 1줄(답을 절반만: "그런데 조건이 하나 있습니다") ④ CTA 1줄(댓글로 할 행동을 구체적으로, 답변 비용이 낮게. 좋은 예: "댓글에 '정리' 남기면 표로 정리한 자료 보내드립니다" / "몇 % 기준으로 보시나요?" 나쁜 예: "링크 참고하세요").
-변형: INFO=한 줄 반전형(상식 1줄 → "아닙니다" → 근거 1줄) 또는 비교형(A/B/차이), OBSERVATION=체크리스트형("이 중 3개 이상이면 ~입니다" 5개 항목) 또는 운영자 관찰, ENGAGEMENT=질문형(내 의견을 먼저 짧게 밝힌 뒤 묻기). 세 글의 포맷이 서로 달라야 합니다.
-금지: 3줄 안에 "안녕하세요"·계정 소개·종목명. 결론을 다 말하는 글. 이모지 3개 이상, 느낌표 2개 이상. 블로그 링크 본문 직접 노출.
-셀프 체크(selfCheck에 O/X): 더보기 없이 보이는 3줄 안에 훅+숫자가 있는가 / 결론이 절반만 나왔는가 / CTA가 댓글로 할 행동을 구체적으로 지시하는가 / 종목 권유·확정 표현이 0개인가`,
-    user: "Content Master로 Threads 게시글 3종(INFO, OBSERVATION, ENGAGEMENT)을 위 규칙대로 만드세요. options.includeLink, ctaStrength, lessAdLike를 반영하고, 사용한 fact key를 factRefs에, 답글용 문구를 replyText에, 셀프 체크를 selfCheck에 넣으세요.",
+
+훅 설계(가장 중요): 글을 쓰기 전에 각도(angle)를 먼저 정합니다. 아래 5가지 중 원본에 실제 근거(facts)가 있는 것만 후보로 두고, 독자가 "내 얘기"라고 느낄 가장 강한 하나를 고릅니다.
+① 손해형: 모르면 잃는 구체 금액·비율 ("이거 모르면 배당에서 15.4%가 그냥 빠져나갑니다")
+② 격차형: 같은 조건인데 결과가 갈리는 두 사람 ("같은 1억인데 A는 월 40만 원, B는 월 12만 원")
+③ 반전형: 상식과 반대인 사실 ("고배당주가 오히려 손해인 경우가 있습니다")
+④ 고백형: 운영자가 직접 틀렸던 경험 한 줄 ("저는 3년 동안 이 숫자를 잘못 보고 있었습니다")
+⑤ 공통점형: 실패·성공하는 사람의 공통점 ("월배당 못 만드는 사람의 공통점 하나")
+첫 줄 규칙: 25자 안팎, 숫자 또는 대비가 들어가고, 종목명·인사·"오늘은" 금지. 두 번째 줄은 첫 줄의 긴장을 풀지 말고 키웁니다(숫자 1개로 증명). 세 번째 줄에서 "그런데" 한 번으로 방향을 틉니다. 예시 문장은 형식만 참고하고 숫자는 facts에서만 가져옵니다.
+
+글 구조(4줄 공식): ① 훅 1줄 ② 근거 1~2줄(숫자 하나로 훅 증명) ③ 미완의 결론 1줄(답을 절반만: "그런데 조건이 하나 있습니다") ④ CTA 1줄(댓글로 할 행동을 구체적으로, 답변 비용이 낮게. 좋은 예: "댓글에 '정리' 남기면 표로 정리한 자료 보내드립니다" / "몇 % 기준으로 보시나요?" 나쁜 예: "링크 참고하세요").
+포맷(variant): INFO=한 줄 반전형 또는 비교형(A/B/차이), OBSERVATION=체크리스트형("이 중 3개 이상이면 ~입니다" 5개 항목) 또는 운영자 관찰·고백, ENGAGEMENT=질문형(내 의견을 먼저 짧게 밝힌 뒤 묻기). 컨텍스트 count가 1이면 각도에 가장 잘 맞는 포맷 하나만 골라 1편을 씁니다. 2편 이상이면 포맷이 서로 달라야 합니다.
+금지: 3줄 안에 "안녕하세요"·계정 소개·종목명. 결론을 다 말하는 글. 이모지 3개 이상, 느낌표 2개 이상. 블로그 링크 본문 직접 노출. 뻔한 교훈("꾸준히 하세요")으로 끝내기.
+셀프 체크(selfCheck에 O/X): 첫 줄 25자 안팎에 숫자 또는 대비가 있는가 / 더보기 없이 보이는 3줄 안에 훅+반전이 있는가 / 결론이 절반만 나왔는가 / CTA가 댓글로 할 행동을 구체적으로 지시하는가 / 종목 권유·확정 표현이 0개인가`,
+    user: "Content Master로 Threads 게시글을 위 규칙대로 만드세요. 컨텍스트의 count와 countGuide에 맞는 편수만 씁니다(기본 1편). 각 글에 angle(고른 훅 각도와 이유 한 줄), variant, text, replyText, factRefs(사용한 fact key), selfCheck를 넣고 options.includeLink, ctaStrength, lessAdLike를 반영하세요.",
   },
   "instagram.generate": {
-    key: "instagram.generate", version: 2, schemaName: "InstagramCards",
-    system: `${COMMON_RULES}
-
-[인스타그램 카드뉴스 규칙]
+    key: "instagram.generate", version: 3, schemaName: "InstagramCards",
+    shared: COMMON_RULES,
+    system: `[인스타그램 카드뉴스 규칙]
 역할: 인스타는 저장과 공유로 큽니다. "나중에 다시 볼 것 같다"는 정리형 콘텐츠가 목표입니다. 스레드가 "논쟁 1개"라면 카드뉴스는 "체계 1개"이며 원본의 구조(단계·비교·체크리스트)를 시각화합니다.
 형식: 표지 1 + 본문 5~7 + 마무리 1 = 7~9장(10장 초과 금지). 장당 제목 15자 이내 + 본문 40자 이내, 한 장에 문장 2개 이상 넣지 않습니다(한 장 60자 초과 금지). 표·비교는 카드 안에 2×2 이상 넣지 않고 복잡하면 장을 나눕니다.
 장별 구조(순서 고정): ① 표지(type=cover): 훅 1줄 + 부제 1줄, tag에 "→ 넘겨보세요" 같은 스와이프 유도, 종목명·전문용어 없이 ② 문제 제기 1장: 왜 중요한지 숫자 1개로 ③ 본문 4~5장: 한 장에 포인트 1개, 제목에 ①②③ 번호 또는 Step 1/2/3, 함정이 있으면 footnote에 "⚠️ " 한 줄 ④ 결론 1장: 핵심을 한 문장으로, 단 마지막 포인트 하나는 비워 둡니다("④는 댓글에서" / "전체 표는 DM으로") ⑤ 마무리(type=cta): "저장해두고 다시 보세요" + "댓글에 '표' 남기면 정리본 드립니다" + 계정명.
@@ -71,22 +79,21 @@ export const PROMPTS: Record<string, PromptDef> = {
 template이 magazine이면 sectionLabel(┌ 라벨), heading(하단 굵은 소제목), footnote(각주)도 채웁니다.
 캡션: 첫 줄은 표지 훅과 다른 문장(125자 안에 잘림, 해시태그 금지) + 카드에 못 넣은 보충 3줄(여기서도 결론은 다 안 줌) + CTA("저장 → 댓글 → DM" 순으로 행동 1개씩, 링크는 "프로필 링크"로만 언급). hashtags 5~10개: 대형 3개(#재테크 #주식 #배당) + 중형 4개 + 소형(구체 주제) 3개.
 셀프 체크(selfCheck에 O/X): 표지 훅이 종목명 없이 손해·격차·반전을 건드리는가 / 모든 장이 제목 15자·본문 40자 이내인가 / 결론 한 조각이 비어 있어 댓글·DM으로 이어지는가 / 마지막 장에 저장+댓글 CTA가 있는가 / 캡션 첫 줄이 표지와 다른 문장인가`,
-    user: "Content Master로 Instagram 카드뉴스(cards 7~9장)를 위 규칙대로 만드세요. template 유형을 반영하고 caption, hashtags, altTexts(장마다 한 줄), selfCheck를 작성하세요.",
+    user: "Content Master로 Instagram 카드뉴스(cards 7~9장)를 위 규칙대로 만드세요. template 유형을 반영하고 caption, hashtags, selfCheck를 작성하세요. altText·색상·크기는 프로그램이 채우므로 쓰지 않습니다.",
   },
   "blog.generate": {
-    key: "blog.generate", version: 4, schemaName: "BlogPost",
-    system: `${COMMON_RULES}
-
-[네이버 블로그 규칙 — 퍼널의 종착지]
+    key: "blog.generate", version: 5, schemaName: "BlogPost",
+    shared: COMMON_RULES,
+    system: `[네이버 블로그 규칙 — 퍼널의 종착지]
 역할: 블로그에서는 정보를 아끼지 않고 전부 줍니다. 체류시간과 이웃추가가 목표입니다. 검색 유입과 SNS 유입을 동시에 받으므로 검색용 제목 + SNS에서 넘어온 사람이 3초 안에 "맞게 왔다"고 느끼는 첫 문단이 필요합니다.
 목소리: 운영자가 직접 겪고 계산해 본 사람의 1인칭. 교과서 말투를 피하고 실제 블로그처럼 독자에게 말을 겁니다. 글 전체에 하나의 분명한 관점을 세우고 밀고 갑니다. "투자는 신중하게" 같은 당연한 말은 글 끝 면책 한 줄로만 둡니다.
 형식: 분량은 lengthGuide를 따르되 기본 1,500~2,500자. 문단은 2~3문장마다 줄바꿈(빈 줄), 한 문단 4줄 이내. 소제목은 sections[].heading으로. 구조 요소: 소제목 / "⚠️ 함정:"으로 시작하는 함정 표시 / 섹션 끝 한 줄 요약(굵게). 이미지 삽입 위치는 본문에 "[이미지: 파일명]"으로 표시(대표 1 + 본문 3~5). tags 10개: 검색어 3 + 카테고리어 4 + 롱테일 3.
-제목: 25자 내외, 검색어를 앞 10자 안에, 숫자 하나(연도·금액·퍼센트·개수) 필수, 낚시 금지(제목이 약속한 것을 첫 화면에서 보여줍니다). titleCandidates 5개.
+제목: 25자 내외, 검색어를 앞 10자 안에, 숫자 하나(연도·금액·퍼센트·개수) 필수, 낚시 금지(제목이 약속한 것을 첫 화면에서 보여줍니다). titleCandidates 3개.
 본문 구조(순서 고정, sections로 표현): ① 첫 문단 3줄: 누구를 위한 글이고 읽고 나면 무엇을 알게 되는지. SNS에서 던진 질문의 답을 바로 줍니다(서론 300자 이상, "오늘은 ~에 대해 알아보겠습니다" 금지) ② 결론 먼저: 핵심 결론을 표 또는 3줄 요약으로 선공개 ③ 근거 섹션 2~4개: 소제목마다 숫자 1개 + 근거 1개 + ⚠️ 함정 1개 ④ 실행 체크리스트: 오늘 할 수 있는 행동 3개를 "- [ ] " 체크박스로 ⑤ 마무리: 다음 글 예고 1줄 + 이웃추가 요청 1줄. 종목 권유 문장 없음.
 숫자: facts.display 그대로 쓰고 숫자 뒤에 "그래서 무엇을 결정해야 하는지"를 붙입니다. 세법·공시 숫자는 "(출처: 기관명, 연도)"를 붙이고 못 찾으면 "[미확인]".
 참고 글(examples)이 주어지면 문장 길이, 도입 방식, 문단 구성, 말끝, 소제목 스타일을 따라 합니다. 문장을 베끼지 말고 리듬과 구성만 가져옵니다. styleGuide가 있으면 그 지침을 우선합니다.
 셀프 체크(selfCheck에 O/X): 제목 앞 10자 안에 검색어가 있는가 / 첫 화면에서 결론이 보이는가 / ⚠️ 함정이 2개 이상 있는가 / 실행 체크리스트가 있는가 / 매수·매도 권유 문장이 0개인가`,
-    user: "Content Master로 검색 의도에 맞는 블로그 글을 위 규칙대로 만드세요. titleCandidates 5개, title, metaDescription(120자 내), toc, sections(markdown; 표·계산 예시·⚠️ 함정·[이미지: 파일명] 포함), faq 2~4개(실제로 검색될 법한 질문), sources, asOfDate, disclaimer, internalLinks, cta(본문 끝에 한 번), thumbnailText, tags 10개, selfCheck를 작성하세요. 컨텍스트의 lengthGuide(목표 길이)를 반드시 지키세요.",
+    user: "Content Master로 검색 의도에 맞는 블로그 글을 위 규칙대로 만드세요. titleCandidates 3개, title, metaDescription(120자 내), sections(markdown; 표·계산 예시·⚠️ 함정·[이미지: 파일명] 포함), faq 2~3개(실제로 검색될 법한 질문), cta(본문 끝에 한 번), thumbnailText, tags 10개, selfCheck를 작성하세요. 목차·출처·기준일·면책 문구는 프로그램이 채우므로 쓰지 않습니다. 컨텍스트의 lengthGuide(목표 길이)를 반드시 지키세요.",
   },
   "style.analyze": {
     key: "style.analyze", version: 1, schemaName: "StyleGuide",
@@ -94,10 +101,9 @@ template이 magazine이면 sectionLabel(┌ 라벨), heading(하단 굵은 소�
     user: "posts(참고 글)에서 공통 문체를 뽑아 styleGuide를 만드세요. voice(화자 태도와 말투), sentence(문장 길이·리듬·종결어미), opening(첫 문단을 여는 방식), structure(소제목·문단·목록·표 사용 패턴), closing(마무리 방식), formatting(굵게·이모지·줄바꿈 습관), vocabulary(자주 쓰는 표현 5~10개), avoid(이 글들이 쓰지 않는 표현·태도), sampleSentences(문체가 잘 드러나는 짧은 문장 3~5개, 각 60자 이내), summary(한 줄 요약). 한국어로 작성합니다.",
   },
   "shorts.generate": {
-    key: "shorts.generate", version: 2, schemaName: "ShortsScript",
-    system: `${COMMON_RULES}
-
-[유튜브 쇼츠 규칙 — 얼굴 없음 · 자막 + AI 음성]
+    key: "shorts.generate", version: 3, schemaName: "ShortsScript",
+    shared: COMMON_RULES,
+    system: `[유튜브 쇼츠 규칙 — 얼굴 없음 · 자막 + AI 음성]
 역할: 첫 2초 이탈률과 완주율이 전부입니다. 정보의 양이 아니라 끝까지 보게 만드는 구조가 목표입니다. 자막이 곧 화면이므로 자막만으로도, 음성만으로도 이해되게 만듭니다. 원본에서 가장 짧게 말할 수 있는 반전 1개만 뽑습니다.
 형식: 길이 30~45초(60초를 채우지 않음). 대본은 초당 4~5자 기준 30초 130~150자, 45초 200자 안팎, 그 이상은 잘라냅니다. 자막(subtitle)은 한 화면 1문장, 최대 12자, 1.5~2초마다 장면 전환. 음성(narration)은 첫 단어부터 시작, 인사 없음, 어미는 "~입니다/~합니다"로 통일. 자막 없는 구간이 2초를 넘지 않게 합니다. 화면(description)은 차트·표·숫자 애니메이션·B롤로 3초 이상 같은 화면 유지 금지.
 대본 구조(초 단위): 0~2초 훅(결론이 아닌 "충격 숫자" 또는 "반전 선언", 예: "배당 100만 원 받으면 실제로는 84만 원입니다" 형식만 참고) → 2~8초 문제 제기 한 문장(상황으로 보여주기, "왜냐하면" 금지) → 8~30초 본론 3포인트(포인트마다 장면 1개 + 숫자 1개, onScreenText에 ①②③) → 30~40초 반전 또는 함정("⚠️ 그런데 이 경우엔 반대입니다" 1문장) → 마지막 3초 CTA(결론의 나머지를 블로그로: "전체 계산표는 댓글 고정 링크에" + 화면에 계정명, 구독 요청은 넣지 않거나 자막으로만).

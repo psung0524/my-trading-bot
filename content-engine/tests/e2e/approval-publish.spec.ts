@@ -9,8 +9,9 @@ async function createCalcMasterWithThreads(page: Page, base: string) {
   await page.getByRole("button", { name: "선택", exact: true }).first().click();
   await page.getByRole("button", { name: "Content Master 생성" }).click();
   await page.waitForURL(`**${base}/content/*`);
-  // Threads만 생성
+  // Threads만 3편 생성 (게시·승인·예약을 각각 다른 항목으로 검증)
   for (const l of [/Instagram/, /^블로그/, /YouTube/]) await page.getByRole("checkbox", { name: l }).uncheck();
+  await page.getByLabel("글 수").selectOption("3");
   await page.getByRole("button", { name: "선택한 채널 생성" }).click();
   await expect(page.getByText("채널 콘텐츠를 생성했습니다")).toBeVisible();
 }

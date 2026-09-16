@@ -80,15 +80,16 @@ const generateSchema = z.object({
   channels: z.array(z.enum(["THREADS", "INSTAGRAM", "BLOG", "YOUTUBE_SHORTS"])).min(1),
   options: z
     .object({
-      threads: z.object({ includeLink: z.boolean().optional(), ctaStrength: z.enum(["none", "low", "medium", "high"]).optional(), lessAdLike: z.boolean().optional() }).optional(),
+      threads: z.object({ includeLink: z.boolean().optional(), ctaStrength: z.enum(["none", "low", "medium", "high"]).optional(), lessAdLike: z.boolean().optional(), count: z.number().int().min(1).max(3).optional() }).optional(),
       instagram: z.object({ template: z.enum(["magazine", "number-focus", "comparison", "checklist", "steps", "schedule"]).optional(), cardCount: z.number().int().min(5).max(8).optional() }).optional(),
       shorts: z.object({ durationSec: z.union([z.literal(30), z.literal(45), z.literal(60)]).optional() }).optional(),
       blog: z.object({ targetLength: z.union([z.literal(1500), z.literal(2500), z.literal(4000)]).optional() }).optional(),
     })
     .default({}),
+  mode: z.enum(["immediate", "batch"]).default("immediate"),
 });
 
-export async function generateChannelsAction(slug: string, masterId: string, input: unknown): Promise<ActionResult<{ jobId: string; warnings: string[] }>> {
+export async function generateChannelsAction(slug: string, masterId: string, input: unknown): Promise<ActionResult<{ jobId: string; warnings: string[]; batch?: { batchId: string; collectJobId: string } }>> {
   const ctx = await requireWorkspaceMember(slug, "generateContent");
   const parsed = generateSchema.safeParse(input);
   if (!parsed.success) return fail("입력값을 확인하세요", zodFieldErrors(parsed.error));
@@ -99,14 +100,36 @@ export async function generateChannelsAction(slug: string, masterId: string, inp
   const res = await enqueueJob({
     type: "content.generate",
     workspaceId: ctx.workspace.id,
-    payload: { workspaceId: ctx.workspace.id, masterId, channels: parsed.data.channels as ChannelType[], options: parsed.data.options as GenerateOptions, userId: ctx.user.id },
+    payload: { workspaceId: ctx.workspace.id, masterId, channels: parsed.data.channels as ChannelType[], options: parsed.data.options as GenerateOptions, userId: ctx.user.id, mode: parsed.data.mode },
     idempotencyKey: `content.generate:${masterId}:${Date.now()}`,
   });
   const job = await prisma.job.findUnique({ where: { id: res.jobId } });
   if (job?.status === "FAILED") return fail(`생성 실패: ${job.lastError ?? "알 수 없는 오류"}`);
-  const warnings = ((job?.result as { _errors?: string[] } | null)?._errors ?? []).map(humanizeGenerateError);
+  const result = (job?.result as { _errors?: string[]; batchId?: string; collectJobId?: string } | null) ?? {};
+  const warnings = (result._errors ?? []).map(humanizeGenerateError);
   revalidatePath(`/w/${slug}/content/${masterId}`);
-  return ok({ jobId: res.jobId, warnings });
+  return ok({ jobId: res.jobId, warnings, batch: result.batchId && result.collectJobId ? { batchId: result.batchId, collectJobId: result.collectJobId } : undefined });
+}
+
+/** 배치 회수 Job을 지금 실행한다(워커 없이 결과를 가져올 때). runAt을 당겨 즉시 처리 */
+export async function collectBatchNowAction(slug: string, jobId: string): Promise<ActionResult<{ ended: boolean; warnings: string[] }>> {
+  const ctx = await requireWorkspaceMember(slug, "generateContent");
+  const job = await prisma.job.findFirst({ where: { id: jobId, workspaceId: ctx.workspace.id, type: "content.generate.collect" } });
+  if (!job) return fail("회수 작업을 찾을 수 없습니다");
+  if (job.status === "SUCCEEDED") {
+    const r = (job.result as { ended?: boolean; _errors?: string[] } | null) ?? {};
+    return ok({ ended: Boolean(r.ended), warnings: (r._errors ?? []).map(humanizeGenerateError) });
+  }
+  if (job.status !== "QUEUED") return fail(`작업 상태가 ${job.status}라 지금 실행할 수 없습니다`);
+  await prisma.job.update({ where: { id: job.id }, data: { runAt: new Date() } });
+  const { processOne } = await import("@/server/jobs/runner");
+  await processOne(`manual-${process.pid}`, ["content.generate.collect"], job.id);
+  const done = await prisma.job.findUnique({ where: { id: job.id } });
+  if (done?.status === "FAILED") return fail(`회수 실패: ${done.lastError ?? "알 수 없는 오류"}`);
+  const r = (done?.result as { ended?: boolean; _errors?: string[] } | null) ?? {};
+  const masterId = (job.payload as { masterId?: string }).masterId;
+  if (masterId) revalidatePath(`/w/${slug}/content/${masterId}`);
+  return ok({ ended: Boolean(r.ended), warnings: (r._errors ?? []).map(humanizeGenerateError) });
 }
 
 function humanizeGenerateError(msg: string): string {

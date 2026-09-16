@@ -9,6 +9,7 @@ async function createCalcMasterWithChannels(page: Page, base: string) {
   await page.getByRole("button", { name: "선택", exact: true }).first().click();
   await page.getByRole("button", { name: "Content Master 생성" }).click();
   await page.waitForURL(`**${base}/content/*`);
+  await page.getByRole("checkbox", { name: /YouTube/ }).check();
   await page.getByRole("button", { name: "선택한 채널 생성" }).click();
   await expect(page.getByText("채널 콘텐츠를 생성했습니다")).toBeVisible();
   return page.url();

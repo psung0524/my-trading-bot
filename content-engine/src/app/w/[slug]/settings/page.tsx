@@ -69,6 +69,7 @@ export default async function SettingsPage(props: PageProps<"/w/[slug]/settings"
             <div className="rounded-md border p-3"><div className="text-xs text-muted-foreground">출력 토큰</div><div className="text-lg font-semibold">{usage.total.output.toLocaleString("ko-KR")}</div></div>
             <div className="rounded-md border p-3"><div className="text-xs text-muted-foreground">예상 비용</div><div className="text-lg font-semibold">${usage.total.usd.toFixed(3)}</div><div className="text-xs text-muted-foreground">{krw(usage.total.usd)}</div></div>
           </div>
+          <p className="text-xs text-muted-foreground">캐시 읽기 {usage.total.cacheRead.toLocaleString("ko-KR")} · 캐시 쓰기 {usage.total.cacheWrite.toLocaleString("ko-KR")} 토큰 · 배치 호출 {usage.total.batchCalls}건 (캐시 읽기는 0.1배, 배치는 0.5배로 계산)</p>
           {usage.byKey.length > 0 && (
             <table className="w-full text-xs">
               <thead><tr className="border-b text-left text-muted-foreground"><th className="py-1">작업</th><th className="py-1 text-right">호출</th><th className="py-1 text-right">입력</th><th className="py-1 text-right">출력</th><th className="py-1 text-right">예상 비용</th></tr></thead>
@@ -84,7 +85,7 @@ export default async function SettingsPage(props: PageProps<"/w/[slug]/settings"
               <summary className="cursor-pointer text-xs text-muted-foreground">최근 호출 {usage.recent.length}건 보기</summary>
               <ul className="mt-2 space-y-1 text-xs">
                 {usage.recent.map((r) => (
-                  <li key={r.id} className="flex flex-wrap gap-x-2 text-muted-foreground"><span>{formatDateTime(r.createdAt)}</span><span className="text-foreground">{r.promptKey}</span><span>{r.provider}/{r.model}</span><span>{r.inputTokens.toLocaleString("ko-KR")}→{r.outputTokens.toLocaleString("ko-KR")}</span><span>${r.estimatedUsd.toFixed(4)}</span></li>
+                  <li key={r.id} className="flex flex-wrap gap-x-2 text-muted-foreground"><span>{formatDateTime(r.createdAt)}</span><span className="text-foreground">{r.promptKey}</span><span>{r.provider}/{r.model}{r.batch ? " · 배치" : ""}{r.cacheReadTokens ? ` · 캐시 ${r.cacheReadTokens.toLocaleString("ko-KR")}` : ""}</span><span>{r.inputTokens.toLocaleString("ko-KR")}→{r.outputTokens.toLocaleString("ko-KR")}</span><span>${r.estimatedUsd.toFixed(4)}</span></li>
                 ))}
               </ul>
             </details>

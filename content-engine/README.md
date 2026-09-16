@@ -6,6 +6,13 @@ Threads · Instagram 카드뉴스 · 블로그 · YouTube Shorts로 변환·렌�
 
 문서: [구현 계획](../docs/IMPLEMENTATION_PLAN.md) · [아키텍처](../docs/ARCHITECTURE.md) · [운영 배포](../docs/DEPLOYMENT.md)
 
+
+## 비용 절감 옵션 (AI 사용 시)
+
+- **생성 방식 → 배치**: Anthropic Message Batches로 같은 결과를 약 50% 단가로 만듭니다. 결과는 수 분~최대 24시간 뒤에 오며, `npm run worker`(또는 `POST /api/jobs/tick` 크론)가 자동으로 가져오거나 Content Master 화면의 "지금 확인" 버튼으로 가져옵니다. Mock 모드에서는 즉시 끝납니다.
+- **프롬프트 캐싱**: 공통 규칙과 Master·브랜드 컨텍스트를 캐시 접두사로 보냅니다. 같은 Master를 5분 안에 다시 생성(재생성, 옵션 변경)하면 그 부분은 0.1배 가격입니다. 설정 화면의 AI 사용량 카드에서 캐시 읽기 토큰을 확인할 수 있습니다.
+- **출력 다이어트**: 목차·출처·기준일·면책·altText처럼 프로그램이 만들 수 있는 필드는 모델이 쓰지 않습니다. 블로그 기본 길이는 1,500자, Threads는 기본 1편입니다.
+
 ## 운영 루프
 
 ```

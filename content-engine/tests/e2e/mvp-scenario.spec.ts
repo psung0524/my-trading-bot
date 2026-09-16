@@ -69,6 +69,8 @@ test("MVP 완료 시나리오 18단계", async ({ page }) => {
   await expect(page.getByText("1억 2,000만 원").first()).toBeVisible();
 
   // 7~10. Threads 3종, Instagram 카드뉴스, 블로그, Shorts 대본·Storyboard 생성
+  await page.getByRole("checkbox", { name: /YouTube/ }).check();
+  await page.getByLabel("글 수").selectOption("3");
   await page.getByRole("button", { name: "선택한 채널 생성" }).click();
   await expect(page.getByText("채널 콘텐츠를 생성했습니다")).toBeVisible();
   await expect(page.getByText("Threads · 정보형")).toBeVisible();
