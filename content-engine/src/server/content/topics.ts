@@ -121,5 +121,7 @@ export async function getMixReport(workspaceId: string) {
     take: 20,
     select: { category: true },
   });
-  return analyzeMix(recent.map((r) => r.category));
+  const ws = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { settings: true } });
+  const reduce = (((ws?.settings as { reduceCategories?: string[] } | null)?.reduceCategories) ?? []) as ContentCategory[];
+  return analyzeMix(recent.map((r) => r.category), reduce);
 }

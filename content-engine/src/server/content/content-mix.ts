@@ -26,7 +26,7 @@ export type MixReport = {
   warning: string | null;
 };
 
-export function analyzeMix(recentCategories: ContentCategory[]): MixReport {
+export function analyzeMix(recentCategories: ContentCategory[], reduceCategories: ContentCategory[] = []): MixReport {
   const cats = Object.keys(TARGET_MIX) as ContentCategory[];
   const counts = Object.fromEntries(cats.map((c) => [c, 0])) as Record<ContentCategory, number>;
   for (const c of recentCategories) counts[c] = (counts[c] ?? 0) + 1;
@@ -38,6 +38,10 @@ export function analyzeMix(recentCategories: ContentCategory[]): MixReport {
   if (total >= 3 && ratios.PROMOTION > TARGET_MIX.PROMOTION * 1.5) {
     warning = `최근 콘텐츠의 ${Math.round(ratios.PROMOTION * 100)}%가 직접 홍보입니다. 다음 소재는 정보형이나 참여형을 우선하세요.`;
     recommendedOrder = ["INFORMATIONAL", "ENGAGEMENT", ...recommendedOrder.filter((c) => c !== "INFORMATIONAL" && c !== "ENGAGEMENT")];
+  }
+  if (reduceCategories.length) {
+    const reduce = new Set(reduceCategories);
+    recommendedOrder = [...recommendedOrder.filter((c) => !reduce.has(c)), ...recommendedOrder.filter((c) => reduce.has(c))];
   }
   return { counts, ratios, target: TARGET_MIX, recommendedOrder, warning };
 }

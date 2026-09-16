@@ -11,6 +11,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { addMemberAction, deleteMyAccountAction, removeMemberAction, updateWorkspaceAction } from "@/server/actions/workspace";
+import { saveScoreWeightsAction } from "@/server/actions/recommendations";
 
 export function WorkspaceSettingsForm({ slug, name, disabled }: { slug: string; name: string; disabled: boolean }) {
   const [value, setValue] = useState(name);
@@ -163,5 +164,32 @@ export function DangerZone() {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+export function ScoreWeightsForm({ slug, weights, disabled }: { slug: string; weights: { click: number; signup: number; activation: number; return: number }; disabled: boolean }) {
+  const [w, setW] = useState(weights);
+  const [pending, start] = useTransition();
+  const fields: { k: keyof typeof w; label: string }[] = [{ k: "click", label: "클릭" }, { k: "signup", label: "가입 전환" }, { k: "activation", label: "핵심 기능 사용" }, { k: "return", label: "재방문" }];
+  return (
+    <form
+      className="grid gap-3 sm:grid-cols-5 sm:items-end"
+      onSubmit={(e) => {
+        e.preventDefault();
+        start(async () => {
+          const res = await saveScoreWeightsAction(slug, w);
+          if (res.ok) toast.success("가중치를 저장했습니다");
+          else toast.error(res.error);
+        });
+      }}
+    >
+      {fields.map((f) => (
+        <div key={f.k}>
+          <Label htmlFor={`w-${f.k}`}>{f.label}</Label>
+          <Input id={`w-${f.k}`} type="number" step="0.05" min="0" max="1" value={w[f.k]} onChange={(e) => setW({ ...w, [f.k]: Number(e.target.value) })} disabled={disabled} className="mt-1" />
+        </div>
+      ))}
+      <Button type="submit" disabled={disabled || pending}>저장</Button>
+    </form>
   );
 }

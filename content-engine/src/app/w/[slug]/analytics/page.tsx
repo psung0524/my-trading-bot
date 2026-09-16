@@ -11,6 +11,10 @@ import { CHANNEL_LABELS } from "@/lib/labels";
 import { CATEGORY_LABELS } from "@/server/content/content-mix";
 import { InstallSnippet } from "./install-snippet";
 import { daysAgo } from "@/lib/format/date";
+import { parseWeights, scoreContents } from "@/server/analytics/score";
+import { prisma } from "@/server/db/prisma";
+import { can } from "@/server/tenancy/permissions";
+import { RecommendationList } from "@/components/app/recommendation-list";
 
 export const metadata: Metadata = { title: "분석" };
 
@@ -68,6 +72,9 @@ export default async function AnalyticsPage(props: PageProps<"/w/[slug]/analytic
   const since = daysAgo(days);
   const [perf, { selected }] = await Promise.all([computePerformance(ctx.workspace.id, since), resolveProduct(ctx.workspace.id)]);
   const t = perf.total;
+  const weights = parseWeights(ctx.workspace.settings);
+  const scored = scoreContents(perf.contents, weights).filter((c) => c.clicks || c.landingVisits || c.signups);
+  const recs = await prisma.recommendation.findMany({ where: { workspaceId: ctx.workspace.id }, orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 20 });
 
   return (
     <div className="space-y-6">
@@ -94,6 +101,41 @@ export default async function AnalyticsPage(props: PageProps<"/w/[slug]/analytic
       <Table title="소재별 성과" rows={perf.byTopic.map((g) => ({ label: g.label, m: g }))} />
       <Table title="콘텐츠 유형별 성과" rows={perf.byCategory.map((g) => ({ label: CATEGORY_LABELS[g.key as keyof typeof CATEGORY_LABELS] ?? g.key, m: g }))} />
       <Table title="CTA별 성과" rows={perf.byCta.map((g) => ({ label: g.label, m: g }))} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>콘텐츠 성과 점수</CardTitle>
+          <CardDescription>score = 클릭 {Math.round(weights.click * 100)}% + 가입 전환율 {Math.round(weights.signup * 100)}% + 활성화율 {Math.round(weights.activation * 100)}% + 재방문율 {Math.round(weights.return * 100)}% (워크스페이스 내 최대값 기준 정규화). 클릭 5회 미만은 &quot;추가 데이터 필요&quot;.</CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground"><tr><th className="p-2">콘텐츠</th><th className="p-2 text-right">클릭</th><th className="p-2 text-right">가입 전환율</th><th className="p-2 text-right">활성화율</th><th className="p-2 text-right">재방문율</th><th className="p-2 text-right">점수</th></tr></thead>
+            <tbody>
+              {scored.length === 0 && <tr><td colSpan={6} className="p-2 text-muted-foreground">데이터 없음</td></tr>}
+              {scored.sort((a, b) => (b.score ?? -1) - (a.score ?? -1)).map((c) => (
+                <tr key={c.channelContentId} className="border-t">
+                  <td className="p-2">{c.masterTitle} · {CHANNEL_LABELS[c.channel]}</td>
+                  <td className="p-2 text-right">{c.clicks}</td>
+                  <td className="p-2 text-right">{pct(c.signupRate)}</td>
+                  <td className="p-2 text-right">{pct(c.activationRate)}</td>
+                  <td className="p-2 text-right">{pct(c.returnRate)}</td>
+                  <td className="p-2 text-right font-medium">{c.needsData ? <span className="text-xs text-muted-foreground">추가 데이터 필요 ({c.clicks}/5)</span> : c.score}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>다음 콘텐츠 추천</CardTitle>
+          <CardDescription>규칙 기반으로 생성되며 자동 적용되지 않습니다. 이유와 사용한 지표를 확인한 뒤 승인하세요.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RecommendationList slug={slug} canAccept={can(ctx.role, "approveContent")} items={recs.map((r) => ({ id: r.id, kind: r.kind, title: r.title, reason: r.reason, status: r.status, metrics: (r.metrics ?? {}) as Record<string, unknown> }))} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

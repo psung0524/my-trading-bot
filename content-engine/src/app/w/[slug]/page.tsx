@@ -4,6 +4,8 @@ import { requireWorkspacePage } from "@/server/tenancy/context";
 import { getDashboardSummary } from "@/server/queries/dashboard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { RecommendationList } from "@/components/app/recommendation-list";
+import { can } from "@/server/tenancy/permissions";
 
 export const metadata: Metadata = { title: "오늘의 업무" };
 
@@ -93,18 +95,7 @@ export default async function DashboardPage(props: PageProps<"/w/[slug]">) {
               <CardTitle>AI가 발견한 변화</CardTitle>
             </CardHeader>
             <CardContent className="text-sm">
-              {s.recommendations.length === 0 ? (
-                <p className="text-muted-foreground">아직 성과 데이터가 충분하지 않습니다. 콘텐츠를 게시하고 추적 링크로 유입을 모으면 여기에 표시됩니다.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {s.recommendations.map((r) => (
-                    <li key={r.id} className="rounded-md border p-2">
-                      <p className="font-medium">{r.title}</p>
-                      <p className="text-xs text-muted-foreground">{r.reason}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <RecommendationList slug={slug} canAccept={can(ctx.role, "approveContent")} showGenerate={s.hasProduct} items={s.recommendations.map((r) => ({ id: r.id, kind: r.kind, title: r.title, reason: r.reason, status: r.status, metrics: (r.metrics ?? {}) as Record<string, unknown> }))} />
             </CardContent>
           </Card>
         </div>

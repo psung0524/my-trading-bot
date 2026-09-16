@@ -3,7 +3,8 @@ import { requireWorkspacePage } from "@/server/tenancy/context";
 import { prisma } from "@/server/db/prisma";
 import { can } from "@/server/tenancy/permissions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { WorkspaceSettingsForm, MemberManager, DangerZone } from "./settings-forms";
+import { WorkspaceSettingsForm, MemberManager, DangerZone, ScoreWeightsForm } from "./settings-forms";
+import { parseWeights } from "@/server/analytics/score";
 
 export const metadata: Metadata = { title: "워크스페이스 설정" };
 
@@ -41,6 +42,15 @@ export default async function SettingsPage(props: PageProps<"/w/[slug]/settings"
             canManage={can(ctx.role, "manageMembers")}
             members={members.map((m) => ({ userId: m.user.id, name: m.user.name ?? "", email: m.user.email, role: m.role }))}
           />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>성과 점수 가중치</CardTitle>
+          <CardDescription>워크스페이스 목표에 따라 클릭·가입·활성화·재방문의 비중을 조정합니다. 합이 1이 되도록 자동 정규화됩니다.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ScoreWeightsForm slug={slug} weights={parseWeights(ctx.workspace.settings)} disabled={!canManage} />
         </CardContent>
       </Card>
       <Card className="border-destructive/40">
