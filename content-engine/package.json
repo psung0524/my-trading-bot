@@ -18,11 +18,13 @@
     "db:studio": "prisma studio",
     "worker": "tsx scripts/worker.ts",
     "postinstall": "prisma generate",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "fonts:download": "tsx scripts/fetch-fonts.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
     "@auth/prisma-adapter": "^2.11.3",
+    "@aws-sdk/client-s3": "^3.1133.0",
     "@hookform/resolvers": "^5.9.1",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",

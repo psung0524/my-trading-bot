@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDateTime } from "@/lib/format/date";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -53,7 +55,7 @@ export function AnalysisPanel({
         </Button>
         {analyzedAt && (
           <span className="text-xs text-muted-foreground">
-            마지막 분석 {new Date(analyzedAt).toLocaleString("ko-KR")} · 방식 <Badge variant="outline">{analysis?.method ?? "-"}</Badge>
+            마지막 분석 {formatDateTime(analyzedAt)} · 방식 <Badge variant="outline">{analysis?.method ?? "-"}</Badge>
           </span>
         )}
       </div>

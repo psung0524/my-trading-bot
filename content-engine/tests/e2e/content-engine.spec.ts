@@ -1,15 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { signupAndCreateWorkspace, waitForForm } from "./helpers";
-
-export async function registerProduct(page: Page, base: string) {
-  await page.goto(`${base}/products/new`);
-  await waitForForm(page);
-  await page.getByLabel("제품 이름").fill("배당 계산기");
-  await page.getByLabel("서비스 URL").fill("https://dividend.example.com");
-  await page.getByLabel("설명").fill("목표 배당금에 필요한 투자금을 계산해 주는 서비스");
-  await page.getByRole("button", { name: "등록하고 분석하기" }).click();
-  await page.waitForURL(`**${base}/products/*?step=analyze`);
-}
+import { test, expect } from "@playwright/test";
+import { registerProduct, signupAndCreateWorkspace, waitForForm } from "./helpers";
 
 test("계산 소재 → Content Master → 4채널 생성 → 미리보기", async ({ page }) => {
   const user = await signupAndCreateWorkspace(page);
@@ -45,7 +35,7 @@ test("계산 소재 → Content Master → 4채널 생성 → 미리보기", asy
   await page.getByRole("link", { name: "열기" }).first().click();
   await page.waitForURL(`${masterUrl}/*`);
   await expect(page.getByText("Content Master와 일치하며 안전 검사를 통과했습니다.")).toBeVisible();
-  await expect(page.getByText("월 50만 원 배당을 받으려면")).toBeVisible();
+  await expect(page.getByLabel(/^본문/)).toHaveValue(/월 50만 원 배당을 받으려면/);
 
   await page.goto(`${base}/content`);
   await expect(page.getByText("월 50만 원의 배당금을 받기 위해 필요한 투자금")).toBeVisible();

@@ -44,3 +44,6 @@ next-env.d.ts
 /storage
 /test-results
 /playwright-report
+
+# downloaded fonts (npm run fonts:download)
+/assets/fonts/*.ttf

@@ -25,3 +25,13 @@ export async function signupAndCreateWorkspace(page: Page, user = uniqueUser()) 
   await page.waitForURL(`**/w/${user.slug}`);
   return user;
 }
+
+export async function registerProduct(page: Page, base: string) {
+  await page.goto(`${base}/products/new`);
+  await waitForForm(page);
+  await page.getByLabel("제품 이름").fill("배당 계산기");
+  await page.getByLabel("서비스 URL").fill("https://dividend.example.com");
+  await page.getByLabel("설명").fill("목표 배당금에 필요한 투자금을 계산해 주는 서비스");
+  await page.getByRole("button", { name: "등록하고 분석하기" }).click();
+  await page.waitForURL(`**${base}/products/*?step=analyze`);
+}
