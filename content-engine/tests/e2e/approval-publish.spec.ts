@@ -44,7 +44,7 @@ test("승인함: 승인 → Mock 게시(외부 ID/URL 저장) → 추적 링크 
 
   // 추적 링크가 만들어졌고 클릭하면 리다이렉트 + 이벤트 기록
   const logText = await job.getByRole("button", { name: "로그" }).click().then(() => job.locator("pre").innerText());
-  const code = logText.match(/추적 링크 적용: (\w+)/)?.[1];
+  const code = logText.match(/추적 링크 적용: ([\w-]+)/)?.[1];
   expect(code).toBeTruthy();
   const res = await page.request.get(`/api/t/${code}`, { maxRedirects: 0 });
   expect(res.status()).toBe(302);

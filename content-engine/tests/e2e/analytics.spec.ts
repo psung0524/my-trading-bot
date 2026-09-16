@@ -30,7 +30,7 @@ test("추적 링크 클릭 → SDK page_view/signup_completed 귀속 → 분석 
   await page.goto(`${base}/schedule`);
   const job = page.getByTestId("publish-job").first();
   await job.getByRole("button", { name: "로그" }).click();
-  const code = (await job.locator("pre").innerText()).match(/추적 링크 적용: (\w+)/)?.[1];
+  const code = (await job.locator("pre").innerText()).match(/추적 링크 적용: ([\w-]+)/)?.[1];
   expect(code).toBeTruthy();
 
   // 클릭 (리다이렉트 목적지의 utm_content가 콘텐츠 ID)

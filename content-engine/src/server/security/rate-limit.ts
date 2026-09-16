@@ -28,8 +28,16 @@ export class MemoryRateLimiter implements RateLimiter {
   }
 }
 
+/** 테스트/개발에서만 RATE_LIMIT_DISABLED=1로 비활성화 가능. 운영에서는 무시된다 */
+class DisabledRateLimiter implements RateLimiter {
+  async check(_key: string, limit: number, windowMs: number) {
+    return { ok: true, remaining: limit, resetAt: Date.now() + windowMs };
+  }
+}
+
 const globalForRl = globalThis as unknown as { rateLimiter?: RateLimiter };
-export const rateLimiter: RateLimiter = globalForRl.rateLimiter ?? new MemoryRateLimiter();
+export const rateLimiter: RateLimiter =
+  globalForRl.rateLimiter ?? (process.env.RATE_LIMIT_DISABLED === "1" && process.env.NODE_ENV !== "production" ? new DisabledRateLimiter() : new MemoryRateLimiter());
 globalForRl.rateLimiter = rateLimiter;
 
 export function clientIp(headers: Headers): string {

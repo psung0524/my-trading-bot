@@ -54,10 +54,11 @@ export function buildRecommendations(scored: Scored[], byChannel: { key: string;
       out.push({ kind: "STOP_CAMPAIGN", title: `성과 낮음: ${s.masterTitle} (${CHANNEL_LABELS[s.channel]})`, reason: `클릭 ${s.clicks}회지만 가입·핵심 기능 사용이 0입니다 (점수 ${s.score}). CTA·랜딩 페이지를 바꾸거나 캠페인을 중단하세요.`, metrics: { clicks: s.clicks, signups: 0, score: s.score }, payload: { channelContentId: s.channelContentId }, dedupeKey: `STOP_CAMPAIGN:${s.channelContentId}` });
     }
   }
-  // 데이터 부족: 게시 7일 지났는데 표본 부족
+  // 데이터 부족: 게시됐지만 표본이 최소 기준에 미달 → 성공/실패로 단정하지 않고 필요한 표본을 명시
   for (const s of scored) {
-    if (s.needsData && s.publishedAt && now.getTime() - new Date(s.publishedAt).getTime() > 7 * 86400_000) {
-      out.push({ kind: "NEED_DATA", title: `추가 데이터 필요: ${s.masterTitle} (${CHANNEL_LABELS[s.channel]})`, reason: `게시 후 7일이 지났지만 클릭이 ${s.clicks}회로 점수를 계산할 최소 표본(${MIN_CLICKS_FOR_SCORE}회)에 미달합니다. 판단을 보류하고 노출을 늘리세요.`, metrics: { clicks: s.clicks, required: MIN_CLICKS_FOR_SCORE }, payload: { channelContentId: s.channelContentId }, dedupeKey: `NEED_DATA:${s.channelContentId}` });
+    if (s.needsData && s.publishedAt) {
+      const days = Math.floor((now.getTime() - new Date(s.publishedAt).getTime()) / 86400_000);
+      out.push({ kind: "NEED_DATA", title: `추가 데이터 필요: ${s.masterTitle} (${CHANNEL_LABELS[s.channel]})`, reason: `게시 후 ${days}일, 클릭 ${s.clicks}회로 점수를 계산할 최소 표본(클릭 ${MIN_CLICKS_FOR_SCORE}회)에 미달합니다. 성과를 판단하지 말고 ${MIN_CLICKS_FOR_SCORE - s.clicks}회 이상의 클릭이 쌓일 때까지 노출을 늘리세요.`, metrics: { clicks: s.clicks, required: MIN_CLICKS_FOR_SCORE, daysSincePublish: days }, payload: { channelContentId: s.channelContentId }, dedupeKey: `NEED_DATA:${s.channelContentId}` });
     }
   }
   return out;

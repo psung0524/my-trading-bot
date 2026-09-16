@@ -130,3 +130,7 @@ IDEA → GENERATING → DRAFT → NEEDS_REVIEW → APPROVED → SCHEDULED → PU
 | 2026-09-16 | shadcn CLI 대신 소스 복사 | `ui.shadcn.com` 네트워크 차단 |
 | 2026-09-16 | Prisma 6.x 채택 | 최신 태그가 8.0 RC라 안정판 사용 |
 | 2026-09-16 | 세션 검증용 PostgreSQL을 로컬 바이너리로 실행 | Docker 데몬 없음. 사용자 환경은 docker-compose 사용 |
+| 2026-09-16 | 렌더 템플릿을 `react-dom/server` 대신 자체 정적 JSX 렌더러(`static-html.ts`)로 문자열화 | Next.js 16이 서버 컴포넌트 그래프에서 `react-dom/server` import를 금지 |
+| 2026-09-16 | 한글 폰트(Noto Sans KR)를 첫 렌더 시 내려받아 Playwright에 가상 URL로 주입 | 컨테이너에 CJK 시스템 폰트가 없어도 카드뉴스·영상이 깨지지 않도록 |
+| 2026-09-16 | Shorts 자막을 장면 이미지에 직접 렌더 + SRT 별도 생성 | FFmpeg drawtext/libass의 폰트 의존성을 제거 |
+| 2026-09-16 | 게시 직전 CTA URL만 추적 링크로 치환하고 승인 본문은 저장하지 않음 | 승인 버전 불변성 유지 + 유입 측정 |

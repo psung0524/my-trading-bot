@@ -1,6 +1,6 @@
 import type { ChannelContent, ChannelType } from "@prisma/client";
 import { prisma } from "@/server/db/prisma";
-import { randomToken } from "@/server/security/crypto";
+import { randomCode } from "@/server/security/crypto";
 
 const MEDIUM: Record<ChannelType, string> = { THREADS: "social", INSTAGRAM: "social", BLOG: "blog", YOUTUBE_SHORTS: "video" };
 const SOURCE: Record<ChannelType, string> = { THREADS: "threads", INSTAGRAM: "instagram", BLOG: "blog", YOUTUBE_SHORTS: "youtube" };
@@ -19,7 +19,7 @@ export async function ensureTrackingLink(workspaceId: string, cc: Pick<ChannelCo
       workspaceId,
       channelContentId: cc.id,
       campaignId: campaign?.id ?? null,
-      code: randomToken(6),
+      code: randomCode(8),
       destinationUrl,
       utmSource: SOURCE[cc.channel],
       utmMedium: MEDIUM[cc.channel],

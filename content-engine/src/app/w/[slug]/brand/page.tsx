@@ -8,6 +8,9 @@ import { ProductPicker } from "@/components/app/product-picker";
 import { Button } from "@/components/ui/button";
 import { BrandProfileForm } from "./brand-form";
 import { BrandRules } from "./brand-rules";
+import { LogoUpload } from "./logo-upload";
+import { prisma } from "@/server/db/prisma";
+import { getStorage } from "@/server/providers/storage";
 
 export const metadata: Metadata = { title: "브랜드 프로필" };
 
@@ -32,6 +35,7 @@ export default async function BrandPage(props: PageProps<"/w/[slug]/brand">) {
   }
   const product = await getProduct(ctx.workspace.id, selected.id);
   const bp = product?.brandProfile;
+  const logo = bp?.logoAssetId ? await prisma.creativeAsset.findFirst({ where: { id: bp.logoAssetId, workspaceId: ctx.workspace.id, deletedAt: null } }) : null;
   const defaults = brandProfileSchema.parse({
     brandName: bp?.brandName ?? product?.name ?? "",
     tagline: bp?.tagline,
@@ -57,6 +61,7 @@ export default async function BrandPage(props: PageProps<"/w/[slug]/brand">) {
         actions={<ProductPicker products={products.map((p) => ({ id: p.id, name: p.name }))} selectedId={selected.id} />}
       />
       <BrandProfileForm slug={slug} productId={selected.id} defaults={defaults} productUrl={selected.url} />
+      <LogoUpload slug={slug} productId={selected.id} currentUrl={logo ? getStorage().url(logo.storageKey) : null} />
       <BrandRules
         slug={slug}
         productId={selected.id}

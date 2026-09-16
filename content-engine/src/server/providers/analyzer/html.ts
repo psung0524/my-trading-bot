@@ -52,12 +52,22 @@ export class HtmlProductAnalyzer implements ProductAnalyzer {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch(url, {
-        signal: ctrl.signal,
-        redirect: "follow",
-        headers: { "user-agent": "ContentEngineBot/0.1 (+product-analysis)", accept: "text/html" },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // 리다이렉트는 수동으로 따라가며 매 단계 공개 주소인지 다시 검사한다 (SSRF 방지)
+      let current = url;
+      let res: Response | null = null;
+      for (let hop = 0; hop < 4; hop++) {
+        res = await fetch(current, {
+          signal: ctrl.signal,
+          redirect: "manual",
+          headers: { "user-agent": "ContentEngineBot/0.1 (+product-analysis)", accept: "text/html" },
+        });
+        if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+          current = await assertPublicUrl(new URL(res.headers.get("location")!, current).toString());
+          continue;
+        }
+        break;
+      }
+      if (!res || !res.ok) throw new Error(`HTTP ${res?.status ?? "redirect"}`);
       const ct = res.headers.get("content-type") ?? "";
       if (!ct.includes("text/html")) throw new Error("HTML 페이지가 아닙니다");
       const buf = Buffer.from(await res.arrayBuffer());

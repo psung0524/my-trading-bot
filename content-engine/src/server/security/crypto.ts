@@ -41,3 +41,12 @@ export function hmacVerify(secret: string, body: string, signature: string): boo
 export function randomToken(bytes = 16): string {
   return randomBytes(bytes).toString("base64url");
 }
+
+const ALPHANUM = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+/** URL에 안전한 영숫자 코드 (혼동 문자 l/1/O/0 제외) */
+export function randomCode(length = 8): string {
+  const bytes = randomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i++) out += ALPHANUM[bytes[i] % ALPHANUM.length];
+  return out;
+}

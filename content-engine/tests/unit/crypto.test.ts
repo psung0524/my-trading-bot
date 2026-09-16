@@ -18,3 +18,10 @@ describe("crypto", () => {
     expect(hmacVerify("secret", "body", "00")).toBe(false);
   });
 });
+
+import { randomCode } from "@/server/security/crypto";
+describe("randomCode", () => {
+  it("영숫자 8자, 혼동 문자 없음", () => {
+    for (let i = 0; i < 50; i++) expect(randomCode(8)).toMatch(/^[a-km-zA-HJ-NP-Z2-9]{8}$/);
+  });
+});

@@ -28,7 +28,7 @@ test("성과 데이터 → 추천 생성(이유·지표) → 승인 시 후속 �
   await page.goto(`${base}/schedule`);
   const job = page.getByTestId("publish-job").first();
   await job.getByRole("button", { name: "로그" }).click();
-  const code = (await job.locator("pre").innerText()).match(/추적 링크 적용: (\w+)/)![1];
+  const code = (await job.locator("pre").innerText()).match(/추적 링크 적용: ([\w-]+)/)![1];
   const workspaceId = await page.goto(`${base}/analytics`).then(async () => (await page.locator("pre").first().innerText()).match(/workspaceId: "([^"]+)"/)![1]);
   const res = await page.request.get(`/api/t/${code}`, { maxRedirects: 0 });
   const ccId = new URL(res.headers()["location"]).searchParams.get("utm_content")!;

@@ -23,6 +23,6 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
-    env: { ...process.env, JOB_RUNNER: "inline", AUTH_URL: baseURL, APP_URL: baseURL, PRODUCT_ANALYZER: "mock" },
+    env: { ...process.env, JOB_RUNNER: "inline", AUTH_URL: baseURL, APP_URL: baseURL, PRODUCT_ANALYZER: "mock", RATE_LIMIT_DISABLED: "1" },
   },
 });

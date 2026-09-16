@@ -32,15 +32,17 @@ export class DbJobQueue implements JobQueueProvider {
     return { jobId: job.id, deduplicated: false };
   }
 
-  async claim(workerId: string, types?: string[]): Promise<JobRecord | null> {
+  async claim(workerId: string, types?: string[], jobId?: string): Promise<JobRecord | null> {
     const staleBefore = new Date(Date.now() - LOCK_TIMEOUT_MS);
     const typeFilter = types && types.length ? Prisma.sql`AND "type" IN (${Prisma.join(types)})` : Prisma.empty;
+    const idFilter = jobId ? Prisma.sql`AND "id" = ${jobId}` : Prisma.empty;
     const rows = await prisma.$queryRaw<JobRecord[]>(Prisma.sql`
       UPDATE "Job" SET "status" = 'PROCESSING', "lockedAt" = NOW(), "lockedBy" = ${workerId}, "attempts" = "attempts" + 1, "updatedAt" = NOW()
       WHERE "id" = (
         SELECT "id" FROM "Job"
         WHERE (("status" = 'QUEUED' AND "runAt" <= NOW()) OR ("status" = 'PROCESSING' AND "lockedAt" < ${staleBefore}))
         ${typeFilter}
+        ${idFilter}
         ORDER BY "runAt" ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1

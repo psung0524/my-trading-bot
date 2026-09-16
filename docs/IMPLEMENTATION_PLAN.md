@@ -126,19 +126,19 @@ User ─< WorkspaceMember >─ Workspace ─< Product ─ BrandProfile ─< Bran
 | AnalyticsProvider | `track(event)` / `query(range)` | 자체 DB | GA4(인터페이스만) |
 | RateLimiter | `check(key, limit, window)` | 메모리 | Redis(추후) |
 
-## 5. 구현 순서
+## 5. 구현 순서와 진행 상태 (2026-09-16 기준: Phase 0~8 완료)
 
-| Phase | 범위 | 완료 기준 |
-| --- | --- | --- |
-| 0 | 저장소 분석, 문서, 스키마 설계 | 본 문서 + ARCHITECTURE.md |
-| 1 | Next.js/TS/Tailwind/shadcn, Prisma+PostgreSQL+migration, Docker Compose, Auth.js, Workspace 멀티테넌트, Vitest/Playwright 설정 | 회원가입→로그인→워크스페이스 생성 E2E 통과, lint/typecheck/test/build 통과 |
-| 2 | Product 등록/분석, BrandProfile, BrandRule, 대시보드 골격 | 온보딩 흐름 E2E |
-| 3 | ContentTopic, ContentMaster, AIProvider(Mock/Anthropic/OpenAI), Validator, 4개 채널 structured output | "월 50만 원 배당" 소재 → Master → 4채널 초안 생성 |
-| 4 | Threads/카드뉴스/블로그/Storyboard 편집기, PNG 렌더, Mock TTS, FFmpeg MP4, RenderJob | PNG ZIP, MP4 다운로드 |
-| 5 | Approval, PublishJob, MockPublisher/Threads Provider, 내보내기, 예약 게시 | 승인 후 게시, 미승인 게시 서버 거부 |
-| 6 | TrackingLink, 이벤트 SDK, 수집 API, 분석 대시보드, ContentPerformance | 클릭→가입 이벤트가 대시보드에 표시 |
-| 7 | Performance Score, 추천 생성, 사용자 승인 반영, Brand Learning 관리 | 추천 카드 표시/승인 |
-| 8 | 테스트 보강, 보안 점검, 접근성, 성능, README, 배포 가이드 | 완료 조건 18단계 E2E 통과 |
+| Phase | 범위 | 완료 기준 | 상태 |
+| --- | --- | --- | --- |
+| 0 | 저장소 분석, 문서, 스키마 설계 | 본 문서 + ARCHITECTURE.md | ✅ |
+| 1 | Next.js/TS/Tailwind/shadcn, Prisma+PostgreSQL+migration, Docker Compose, Auth.js, Workspace 멀티테넌트, Vitest/Playwright 설정 | 회원가입→로그인→워크스페이스 생성 E2E 통과, lint/typecheck/test/build 통과 | ✅ |
+| 2 | Product 등록/분석, BrandProfile, BrandRule, 대시보드 골격 | 온보딩 흐름 E2E | ✅ |
+| 3 | ContentTopic, ContentMaster, AIProvider(Mock/Anthropic/OpenAI), Validator, 4개 채널 structured output | "월 50만 원 배당" 소재 → Master → 4채널 초안 생성 | ✅ |
+| 4 | Threads/카드뉴스/블로그/Storyboard 편집기, PNG 렌더, Mock TTS, FFmpeg MP4, RenderJob | PNG ZIP, MP4 다운로드 | ✅ |
+| 5 | Approval, PublishJob, MockPublisher/Threads Provider, 내보내기, 예약 게시 | 승인 후 게시, 미승인 게시 서버 거부 | ✅ |
+| 6 | TrackingLink, 이벤트 SDK, 수집 API, 분석 대시보드, ContentPerformance | 클릭→가입 이벤트가 대시보드에 표시 | ✅ |
+| 7 | Performance Score, 추천 생성, 사용자 승인 반영, Brand Learning 관리 | 추천 카드 표시/승인 | ✅ |
+| 8 | 테스트 보강, 보안 점검, 접근성, 성능, README, 배포 가이드 | 완료 조건 18단계 E2E 통과 | ✅ |
 
 각 Phase 종료 시 `npm run lint && npm run typecheck && npm run test && npm run build`를 실행하고 결과를 기록한다.
 
@@ -158,3 +158,31 @@ User ─< WorkspaceMember >─ Workspace ─< Product ─ BrandProfile ─< Bran
 | 워크스페이스 URL | `/w/[slug]/...` | 멀티테넌트 명시 |
 | 소셜 로그인 | env 존재 시에만 Provider 등록 | 키 없이도 빌드 |
 | 이메일 발송 | MVP 미구현(가입 즉시 활성) | 외부 SMTP 의존 제거 |
+
+## 7. 완료 조건(§17) 검증 결과
+
+`tests/e2e/mvp-scenario.spec.ts`가 18단계를 한 흐름으로 실행한다. 회원가입 → 워크스페이스 → 제품·브랜드 → 계산 소재 → Content Master(2억/1억 5,000만/1억 2,000만 원 검증) → Threads 3종·카드뉴스·블로그·Shorts 생성 → PNG·Markdown·MP4 다운로드 → 수정·승인 → Mock 게시 → 추적 링크 클릭 → SDK 가입 이벤트 → 분석 대시보드 → 추천 생성.
+
+## 8. 남은 문제와 다음 단계
+
+| 항목 | 상태 | 비고 |
+| --- | --- | --- |
+| Instagram/YouTube 실제 API 게시 | 인터페이스만 | Provider 구현 후 `getPublisher()`에 연결. 승인·멱등·서버 재검증 로직은 그대로 재사용 |
+| TREND 등 소재 소스의 실제 데이터 | Mock | 외부 API 연결 시 `TopicSourceProvider` 구현 |
+| 자막 타이밍 | 장면 단위 | 단어 단위 타이밍은 실제 TTS의 timestamp 지원이 필요 |
+| Redis 기반 rate limit/queue | 인터페이스만 | 다중 인스턴스 운영 시 필요 |
+| 이메일 인증/초대 메일 | 미구현 | 외부 SMTP 의존을 피함 |
+| 소프트 삭제 데이터의 물리 삭제 배치 | 미구현 | 운영 정책에 맞춰 추가 |
+| 노출(impressions) 지표 | N/A | 플랫폼 API 연동 후 채움 |
+
+## 9. 검증 실행 기록 (2026-09-16)
+
+| 검사 | 명령 | 결과 |
+| --- | --- | --- |
+| Lint | `npm run lint` | 0 errors, 0 warnings |
+| Typecheck | `npm run typecheck` (next typegen + tsc strict) | 통과 |
+| 단위·통합 테스트 | `npm run test` | 15 files, 48 tests 통과 (DB 통합 1건 포함) |
+| Build | `npm run build` | 통과 (Turbopack tracing 경고 5건: 동적 스토리지/폰트 경로, 무해) |
+| E2E | `npm run test:e2e` | 11 tests 통과 (MVP 18단계 시나리오 포함) |
+
+검증 환경: Node 22, PostgreSQL 16(로컬), Chromium 141, ffmpeg-static 7.0.1, Mock AI/TTS/Publisher.

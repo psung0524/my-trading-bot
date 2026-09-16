@@ -19,15 +19,16 @@ export async function enqueueJob(input: {
   const inline = (process.env.JOB_RUNNER ?? "inline") === "inline";
   const scheduledLater = input.runAt && input.runAt.getTime() > Date.now() + 1000;
   if (inline && !res.deduplicated && !scheduledLater) {
-    await processOne(`inline-${process.pid}`, [input.type]);
+    // 방금 넣은 Job만 처리한다 (다른 오래된 Job을 대신 집지 않도록)
+    await processOne(`inline-${process.pid}`, [input.type], res.jobId);
   }
   return res;
 }
 
 /** Job 하나를 가져와 처리. 처리한 경우 true */
-export async function processOne(workerId: string, types?: string[]): Promise<boolean> {
+export async function processOne(workerId: string, types?: string[], jobId?: string): Promise<boolean> {
   const queue = getJobQueue();
-  const job = await queue.claim(workerId, types);
+  const job = await queue.claim(workerId, types, jobId);
   if (!job) return false;
   const logs: string[] = [];
   const log = (m: string) => logs.push(`[${new Date().toISOString()}] ${m}`);
