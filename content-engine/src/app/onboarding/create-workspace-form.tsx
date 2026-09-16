@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { useHydrated, hydratedAttr } from "@/lib/use-hydrated";
-import { createWorkspaceSchema, slugify, type CreateWorkspaceInput } from "@/lib/schemas/workspace";
+import { createWorkspaceSchema, sanitizeSlugInput, slugify, type CreateWorkspaceInput } from "@/lib/schemas/workspace";
 import { createWorkspaceAction } from "@/server/actions/workspace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,11 +66,11 @@ export function CreateWorkspaceForm() {
           name="slug"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>URL 슬러그</FormLabel>
+              <FormLabel>워크스페이스 주소 이름 (영문)</FormLabel>
               <FormControl>
-                <Input placeholder="dividend-team" {...field} />
+                <Input placeholder="dive" {...field} onChange={(e) => field.onChange(sanitizeSlugInput(e.target.value))} />
               </FormControl>
-              <FormDescription>/w/{field.value || "슬러그"} 형태로 사용됩니다.</FormDescription>
+              <FormDescription>이 앱 안에서 쓰는 짧은 이름입니다. 예: dive → /w/{field.value || "dive"}. 실제 사이트 주소는 다음 단계(제품 등록)에서 입력합니다.</FormDescription>
               <FormMessage />
             </FormItem>
           )}

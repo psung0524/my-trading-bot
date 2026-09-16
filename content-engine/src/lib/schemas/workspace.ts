@@ -30,3 +30,11 @@ export function slugify(name: string): string {
     .slice(0, 40);
   return base.length >= 3 ? base : `ws-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+/** 입력 중인 값을 정리한다. URL을 붙여 넣으면 도메인 첫 부분만 남긴다 (예: https://divedividend.com/ → divedividend) */
+export function sanitizeSlugInput(raw: string): string {
+  let v = raw.trim().toLowerCase();
+  const url = v.match(/^(?:https?:\/\/)?(?:www\.)?([a-z0-9-]+)/);
+  if (/^(https?:\/\/|www\.)/.test(v) && url) v = url[1];
+  return v.replace(/[^a-z0-9-]/g, "").slice(0, 40);
+}

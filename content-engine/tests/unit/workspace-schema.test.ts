@@ -13,3 +13,13 @@ describe("workspace schema", () => {
     expect(createWorkspaceSchema.safeParse({ name: "x", slug: "good-slug-1" }).success).toBe(true);
   });
 });
+
+import { sanitizeSlugInput } from "@/lib/schemas/workspace";
+describe("sanitizeSlugInput", () => {
+  it("URL을 붙여 넣으면 도메인 이름만 남김", () => {
+    expect(sanitizeSlugInput("https://divedividend.com/")).toBe("divedividend");
+    expect(sanitizeSlugInput("www.Example.co.kr")).toBe("example");
+    expect(sanitizeSlugInput("DIVE Team!")).toBe("diveteam");
+    expect(sanitizeSlugInput("dive-team")).toBe("dive-team");
+  });
+});

@@ -19,8 +19,8 @@ export async function signupAndCreateWorkspace(page: Page, user = uniqueUser()) 
   await page.getByRole("button", { name: "가입하기" }).click();
   await page.waitForURL("**/onboarding**");
   await waitForForm(page);
-  await page.getByLabel("이름").fill("배당 계산기 팀");
-  await page.getByLabel("URL 슬러그").fill(user.slug);
+  await page.getByLabel("이름", { exact: true }).fill("배당 계산기 팀");
+  await page.getByLabel("워크스페이스 주소 이름 (영문)").fill(user.slug);
   await page.getByRole("button", { name: "워크스페이스 만들기" }).click();
   await page.waitForURL(`**/w/${user.slug}`);
   return user;

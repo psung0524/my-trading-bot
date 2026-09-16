@@ -19,8 +19,8 @@ test("MVP 완료 시나리오 18단계", async ({ page }) => {
 
   // 2. 워크스페이스 생성
   await waitForForm(page);
-  await page.getByLabel("이름").fill("배당 계산기 팀");
-  await page.getByLabel("URL 슬러그").fill(user.slug);
+  await page.getByLabel("이름", { exact: true }).fill("배당 계산기 팀");
+  await page.getByLabel("워크스페이스 주소 이름 (영문)").fill(user.slug);
   await page.getByRole("button", { name: "워크스페이스 만들기" }).click();
   const base = `/w/${user.slug}`;
   await page.waitForURL(`**${base}`);
